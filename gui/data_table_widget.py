@@ -39,22 +39,22 @@ class DataTableWidget(QWidget):
         # Toolbar
         toolbar = QHBoxLayout()
 
-        self.add_row_btn = QPushButton("+ Row")
+        self.add_row_btn = QPushButton("Add Row")
         self.add_row_btn.clicked.connect(self._add_row)
         self.add_row_btn.setToolTip("Add a new row at the end")
         toolbar.addWidget(self.add_row_btn)
 
-        self.add_col_btn = QPushButton("+ Column")
+        self.add_col_btn = QPushButton("Add Col")
         self.add_col_btn.clicked.connect(self._add_column)
         self.add_col_btn.setToolTip("Add a new column")
         toolbar.addWidget(self.add_col_btn)
 
-        self.del_row_btn = QPushButton("- Row")
+        self.del_row_btn = QPushButton("Del Row")
         self.del_row_btn.clicked.connect(self._delete_selected_rows)
         self.del_row_btn.setToolTip("Delete selected row(s)")
         toolbar.addWidget(self.del_row_btn)
 
-        self.del_col_btn = QPushButton("- Column")
+        self.del_col_btn = QPushButton("Del Col")
         self.del_col_btn.clicked.connect(self._delete_selected_columns)
         self.del_col_btn.setToolTip("Delete selected column(s)")
         toolbar.addWidget(self.del_col_btn)
@@ -66,6 +66,7 @@ class DataTableWidget(QWidget):
         self.row_spin = QSpinBox()
         self.row_spin.setRange(1, 10000)
         self.row_spin.setValue(10)
+        self.row_spin.setFixedWidth(60)
         self.row_spin.valueChanged.connect(self._set_row_count)
         toolbar.addWidget(self.row_spin)
 
@@ -73,6 +74,7 @@ class DataTableWidget(QWidget):
         self.col_spin = QSpinBox()
         self.col_spin.setRange(1, 100)
         self.col_spin.setValue(3)
+        self.col_spin.setFixedWidth(50)
         self.col_spin.valueChanged.connect(self._set_col_count)
         toolbar.addWidget(self.col_spin)
 
