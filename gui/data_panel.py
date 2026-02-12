@@ -1,18 +1,19 @@
 """
 Data panel - provides UI for loading data files, pasting data,
-selecting columns for X/Y/error bars, AND Prism-style replicate grouping
-where multiple columns are auto-aggregated to Mean+ErrorBar.
+editing data in a spreadsheet-like table, selecting columns for X/Y/error bars,
+AND Prism-style replicate grouping where multiple columns are auto-aggregated to Mean+ErrorBar.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QFileDialog, QTextEdit, QGroupBox, QFormLayout,
     QLineEdit, QScrollArea, QFrame, QMessageBox, QTabWidget,
-    QListWidget, QAbstractItemView, QCheckBox,
+    QListWidget, QAbstractItemView, QCheckBox, QSplitter,
 )
-from PyQt6.QtCore import pyqtSignal, QTimer
+from PyQt6.QtCore import pyqtSignal, QTimer, Qt
 
 from core.data_manager import DataManager, ERROR_BAR_TYPES, CENTRAL_TYPES
+from gui.data_table_widget import DataTableWidget
 
 
 class DataSeriesWidget(QFrame):
@@ -130,6 +131,50 @@ class DataSeriesWidget(QFrame):
     def is_replicate_mode(self) -> bool:
         return self.mode_combo.currentIndex() == 1
 
+    def update_columns(self, columns: list[str]):
+        """Update available columns."""
+        self._columns = columns
+
+        # Save current selections
+        current_x = self.x_combo.currentText()
+        current_y = self.y_combo.currentText()
+        current_yerr = self.yerr_combo.currentText()
+
+        # Update X combo
+        self.x_combo.blockSignals(True)
+        self.x_combo.clear()
+        self.x_combo.addItems(["(auto index)"] + columns)
+        idx = self.x_combo.findText(current_x)
+        if idx >= 0:
+            self.x_combo.setCurrentIndex(idx)
+        self.x_combo.blockSignals(False)
+
+        # Update Y combo
+        self.y_combo.blockSignals(True)
+        self.y_combo.clear()
+        self.y_combo.addItems(columns)
+        idx = self.y_combo.findText(current_y)
+        if idx >= 0:
+            self.y_combo.setCurrentIndex(idx)
+        elif columns:
+            self.y_combo.setCurrentIndex(0)
+        self.y_combo.blockSignals(False)
+
+        # Update Y error combo
+        self.yerr_combo.blockSignals(True)
+        self.yerr_combo.clear()
+        self.yerr_combo.addItems(["(none)"] + columns)
+        idx = self.yerr_combo.findText(current_yerr)
+        if idx >= 0:
+            self.yerr_combo.setCurrentIndex(idx)
+        self.yerr_combo.blockSignals(False)
+
+        # Update replicate list
+        self.rep_list.blockSignals(True)
+        self.rep_list.clear()
+        self.rep_list.addItems(columns)
+        self.rep_list.blockSignals(False)
+
     def get_selection(self) -> dict:
         x_text = self.x_combo.currentText()
         sel = {
@@ -161,8 +206,35 @@ class DataPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # Tab widget for file vs paste input
-        tabs = QTabWidget()
+        # Main splitter for data input vs series config
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # Top section: Data input tabs
+        data_input_widget = QWidget()
+        data_input_layout = QVBoxLayout(data_input_widget)
+        data_input_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Tab widget for different input methods
+        self.input_tabs = QTabWidget()
+
+        # --- Editable Table tab (Primary method) ---
+        table_tab = QWidget()
+        table_layout = QVBoxLayout(table_tab)
+        table_layout.setContentsMargins(4, 4, 4, 4)
+
+        self.data_table = DataTableWidget()
+        self.data_table.data_changed.connect(self._on_table_data_changed)
+        table_layout.addWidget(self.data_table)
+
+        table_btn_row = QHBoxLayout()
+        self.apply_table_btn = QPushButton("Apply Table Data")
+        self.apply_table_btn.clicked.connect(self._apply_table_data)
+        self.apply_table_btn.setToolTip("Use table data for plotting")
+        table_btn_row.addWidget(self.apply_table_btn)
+        table_btn_row.addStretch()
+        table_layout.addLayout(table_btn_row)
+
+        self.input_tabs.addTab(table_tab, "Edit Data")
 
         # --- File tab ---
         file_tab = QWidget()
@@ -179,7 +251,7 @@ class DataPanel(QWidget):
         self.file_info_label.setWordWrap(True)
         file_layout.addWidget(self.file_info_label)
         file_layout.addStretch()
-        tabs.addTab(file_tab, "File")
+        self.input_tabs.addTab(file_tab, "Import File")
 
         # --- Paste tab ---
         paste_tab = QWidget()
@@ -197,7 +269,7 @@ class DataPanel(QWidget):
         self._paste_timer = None
         self.paste_edit.textChanged.connect(self._on_paste_text_changed)
         paste_layout.addStretch()
-        tabs.addTab(paste_tab, "Paste")
+        self.input_tabs.addTab(paste_tab, "Paste")
 
         # --- Demo tab ---
         demo_tab = QWidget()
@@ -207,17 +279,22 @@ class DataPanel(QWidget):
         self.demo_btn.clicked.connect(self._use_demo)
         demo_layout.addWidget(self.demo_btn)
         demo_layout.addStretch()
-        tabs.addTab(demo_tab, "Demo")
+        self.input_tabs.addTab(demo_tab, "Demo")
 
-        layout.addWidget(tabs)
+        data_input_layout.addWidget(self.input_tabs)
+        splitter.addWidget(data_input_widget)
 
-        # --- Series configuration area ---
+        # Bottom section: Series configuration
+        series_widget = QWidget()
+        series_layout = QVBoxLayout(series_widget)
+        series_layout.setContentsMargins(0, 0, 0, 0)
+
         series_group = QGroupBox("Data Series")
-        series_layout = QVBoxLayout(series_group)
+        series_inner = QVBoxLayout(series_group)
 
         self.add_series_btn = QPushButton("+ Add Series")
         self.add_series_btn.clicked.connect(self._add_series)
-        series_layout.addWidget(self.add_series_btn)
+        series_inner.addWidget(self.add_series_btn)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -226,11 +303,70 @@ class DataPanel(QWidget):
         self.series_vlayout.setContentsMargins(0, 0, 0, 0)
         self.series_vlayout.addStretch()
         scroll.setWidget(self.series_container)
-        series_layout.addWidget(scroll)
+        series_inner.addWidget(scroll)
 
-        layout.addWidget(series_group, stretch=1)
+        series_layout.addWidget(series_group)
+        splitter.addWidget(series_widget)
+
+        # Set splitter sizes
+        splitter.setSizes([400, 200])
+
+        layout.addWidget(splitter)
 
         self._use_demo_data = False
+        self._table_has_changes = False
+
+    # ---- Table Data Handling ----
+
+    def _on_table_data_changed(self):
+        """Handle table data changes."""
+        self._table_has_changes = True
+        # Auto-apply table data for live preview
+        self._apply_table_data(silent=True)
+
+    def _apply_table_data(self, silent: bool = False):
+        """Apply data from table to the data manager."""
+        if not self.data_table.has_data():
+            if not silent:
+                QMessageBox.information(self, "Info", "Table is empty. Enter some data first.")
+            return
+
+        # Get data from table
+        export_data = self.data_table.get_data_for_export()
+        columns = export_data.get("columns", [])
+        data = export_data.get("data", {})
+
+        if not columns:
+            if not silent:
+                QMessageBox.information(self, "Info", "No data columns found.")
+            return
+
+        # Import into data manager
+        self.data_manager.import_raw_data(export_data)
+
+        # Update UI
+        self.file_info_label.setText(
+            f"Using table data\nColumns: {', '.join(columns)}\n"
+            f"Rows: {self.data_table.get_row_count()}"
+        )
+        self._use_demo_data = False
+        self._table_has_changes = False
+
+        # Update series widgets with new columns
+        self._update_series_columns(columns)
+
+        self.data_changed.emit()
+
+    def _update_series_columns(self, columns: list[str]):
+        """Update column selections in existing series widgets."""
+        if not self.series_widgets:
+            # Create initial series if none exist
+            if len(columns) >= 1:
+                self._add_series_with_columns(columns, 0)
+        else:
+            # Update existing series widgets with new columns
+            for sw in self.series_widgets:
+                sw.update_columns(columns)
 
     # ---- Loading ----
 
@@ -248,6 +384,10 @@ class DataPanel(QWidget):
                 f"Loaded: {path}\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+
+            # Also populate the editable table
+            self._sync_table_from_manager()
+
             self._rebuild_series(cols)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load CSV:\n{e}")
@@ -265,9 +405,24 @@ class DataPanel(QWidget):
                 f"Loaded: {path}\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+
+            # Also populate the editable table
+            self._sync_table_from_manager()
+
             self._rebuild_series(cols)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to load Excel:\n{e}")
+
+    def _sync_table_from_manager(self):
+        """Sync the editable table from data manager."""
+        export_data = self.data_manager.export_raw_data()
+        columns = export_data.get("columns", [])
+        data = export_data.get("data", {})
+
+        if columns and data:
+            self.data_table.set_data(columns, data)
+            # Switch to table tab so user can see/edit the data
+            self.input_tabs.setCurrentIndex(0)
 
     def _on_paste_text_changed(self):
         """Auto-parse paste data after user stops typing (500ms debounce)."""
@@ -293,6 +448,10 @@ class DataPanel(QWidget):
                 f"Parsed pasted data\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+
+            # Sync to editable table
+            self._sync_table_from_manager()
+
             self._rebuild_series(cols)
         except Exception:
             pass  # Don't show error during auto-parse; user can click Parse button
@@ -308,6 +467,10 @@ class DataPanel(QWidget):
                 f"Parsed pasted data\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+
+            # Sync to editable table
+            self._sync_table_from_manager()
+
             self._rebuild_series(cols)
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Failed to parse data:\n{e}")
@@ -322,7 +485,7 @@ class DataPanel(QWidget):
 
     def _rebuild_series(self, columns: list[str]):
         self._clear_series()
-        if len(columns) >= 2:
+        if len(columns) >= 1:
             self._add_series_with_columns(columns, 0)
         self.data_changed.emit()
 
@@ -335,8 +498,19 @@ class DataPanel(QWidget):
     def _add_series(self):
         cols = self.data_manager.get_columns()
         if not cols:
-            QMessageBox.information(self, "Info", "Please load data first.")
-            return
+            # Try to get from table
+            cols = self.data_table.get_columns()
+            if not cols or cols == ["X", "Y1", "Y2"]:  # Default table columns
+                QMessageBox.information(self, "Info", "Please load or enter data first.")
+                return
+
+            # Apply table data first
+            self._apply_table_data(silent=True)
+            cols = self.data_manager.get_columns()
+            if not cols:
+                QMessageBox.information(self, "Info", "Please load or enter data first.")
+                return
+
         idx = len(self.series_widgets)
         self._add_series_with_columns(cols, idx)
         self.data_changed.emit()
@@ -388,11 +562,20 @@ class DataPanel(QWidget):
         Get raw data for embedding in project file.
 
         Returns:
-            Dict with 'columns', 'data', and 'selections' for full state restore.
+            Dict with 'columns', 'data', 'selections', 'table_data' for full state restore.
         """
         result = self.data_manager.export_raw_data()
         result["selections"] = self.get_selections()
         result["is_demo"] = self._use_demo_data
+
+        # Also save table data for full restore (fallback if manager is empty)
+        if self.data_table.has_data():
+            table_export = self.data_table.get_data_for_export()
+            # Merge table data if manager is empty
+            if not result.get("columns") and table_export.get("columns"):
+                result["columns"] = table_export["columns"]
+                result["data"] = table_export["data"]
+
         return result
 
     def set_embedded_data(self, embedded: dict):
@@ -413,10 +596,13 @@ class DataPanel(QWidget):
         if not columns or not data:
             return
 
-        # Import raw data
+        # Import raw data into manager
         imported_cols = self.data_manager.import_raw_data(embedded)
         if not imported_cols:
             return
+
+        # Update editable table with the data
+        self.data_table.set_data(columns, data)
 
         # Update UI
         self.file_info_label.setText(
@@ -476,7 +662,10 @@ class DataPanel(QWidget):
                 self.series_widgets.append(sw)
         else:
             # No selections saved, create default
-            if len(imported_cols) >= 2:
+            if len(imported_cols) >= 1:
                 self._add_series_with_columns(imported_cols, 0)
+
+        # Switch to table tab to show the restored data
+        self.input_tabs.setCurrentIndex(0)
 
         self.data_changed.emit()
