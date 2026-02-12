@@ -10,15 +10,37 @@ Features:
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QInputDialog, QMessageBox, QMenu,
-    QApplication, QLabel, QSpinBox,
+    QApplication, QLabel, QSpinBox, QToolBar, QToolButton, QSizePolicy,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QAction, QKeySequence, QColor
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtGui import QAction, QKeySequence, QColor, QIcon, QPainter, QPixmap
 
 import numpy as np
 from typing import Optional
+
+
+def _create_icon(symbol: str, color: str = "#333333") -> QIcon:
+    """Create a simple icon with a symbol character."""
+    pixmap = QPixmap(24, 24)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Set font for the symbol
+    font = painter.font()
+    font.setPixelSize(16)
+    font.setBold(True)
+    painter.setFont(font)
+
+    # Draw the symbol
+    from PyQt6.QtGui import QColor as QC
+    painter.setPen(QC(color))
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, symbol)
+    painter.end()
+
+    return QIcon(pixmap)
 
 
 class DataTableWidget(QWidget):
@@ -36,54 +58,76 @@ class DataTableWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # Toolbar
-        toolbar = QHBoxLayout()
+        # Toolbar using QToolBar for better macOS compatibility
+        toolbar = QToolBar()
+        toolbar.setMovable(False)
+        toolbar.setIconSize(QSize(20, 20))
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
 
-        self.add_row_btn = QPushButton("Add Row")
-        self.add_row_btn.clicked.connect(self._add_row)
-        self.add_row_btn.setToolTip("Add a new row at the end")
-        toolbar.addWidget(self.add_row_btn)
+        # Add Row action
+        self.add_row_action = QAction(_create_icon("+", "#228B22"), "Row", self)
+        self.add_row_action.setToolTip("Add a new row at the end")
+        self.add_row_action.triggered.connect(self._add_row)
+        toolbar.addAction(self.add_row_action)
 
-        self.add_col_btn = QPushButton("Add Col")
-        self.add_col_btn.clicked.connect(self._add_column)
-        self.add_col_btn.setToolTip("Add a new column")
-        toolbar.addWidget(self.add_col_btn)
+        # Add Column action
+        self.add_col_action = QAction(_create_icon("+", "#228B22"), "Col", self)
+        self.add_col_action.setToolTip("Add a new column")
+        self.add_col_action.triggered.connect(self._add_column)
+        toolbar.addAction(self.add_col_action)
 
-        self.del_row_btn = QPushButton("Del Row")
-        self.del_row_btn.clicked.connect(self._delete_selected_rows)
-        self.del_row_btn.setToolTip("Delete selected row(s)")
-        toolbar.addWidget(self.del_row_btn)
+        toolbar.addSeparator()
 
-        self.del_col_btn = QPushButton("Del Col")
-        self.del_col_btn.clicked.connect(self._delete_selected_columns)
-        self.del_col_btn.setToolTip("Delete selected column(s)")
-        toolbar.addWidget(self.del_col_btn)
+        # Delete Row action
+        self.del_row_action = QAction(_create_icon("−", "#DC143C"), "Row", self)
+        self.del_row_action.setToolTip("Delete selected row(s)")
+        self.del_row_action.triggered.connect(self._delete_selected_rows)
+        toolbar.addAction(self.del_row_action)
 
-        toolbar.addStretch()
+        # Delete Column action
+        self.del_col_action = QAction(_create_icon("−", "#DC143C"), "Col", self)
+        self.del_col_action.setToolTip("Delete selected column(s)")
+        self.del_col_action.triggered.connect(self._delete_selected_columns)
+        toolbar.addAction(self.del_col_action)
 
-        # Row/column count controls
-        toolbar.addWidget(QLabel("Rows:"))
+        toolbar.addSeparator()
+
+        # Spacer
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+
+        # Row count label and spinbox
+        rows_label = QLabel(" Rows:")
+        toolbar.addWidget(rows_label)
+
         self.row_spin = QSpinBox()
         self.row_spin.setRange(1, 10000)
         self.row_spin.setValue(10)
-        self.row_spin.setFixedWidth(60)
+        self.row_spin.setFixedWidth(70)
         self.row_spin.valueChanged.connect(self._set_row_count)
         toolbar.addWidget(self.row_spin)
 
-        toolbar.addWidget(QLabel("Cols:"))
+        # Column count label and spinbox
+        cols_label = QLabel(" Cols:")
+        toolbar.addWidget(cols_label)
+
         self.col_spin = QSpinBox()
         self.col_spin.setRange(1, 100)
         self.col_spin.setValue(3)
-        self.col_spin.setFixedWidth(50)
+        self.col_spin.setFixedWidth(60)
         self.col_spin.valueChanged.connect(self._set_col_count)
         toolbar.addWidget(self.col_spin)
 
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.clicked.connect(self._clear_all)
-        self.clear_btn.setToolTip("Clear all data")
-        toolbar.addWidget(self.clear_btn)
+        toolbar.addSeparator()
 
-        layout.addLayout(toolbar)
+        # Clear action
+        self.clear_action = QAction(_create_icon("×", "#FF4500"), "Clear", self)
+        self.clear_action.setToolTip("Clear all data")
+        self.clear_action.triggered.connect(self._clear_all)
+        toolbar.addAction(self.clear_action)
+
+        layout.addWidget(toolbar)
 
         # Table widget
         self.table = QTableWidget()
