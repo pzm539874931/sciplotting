@@ -1,0 +1,1 @@
+# SciPlotGUI test package
