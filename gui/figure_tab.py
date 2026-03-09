@@ -183,12 +183,36 @@ class FigureTab(QWidget):
         self.stats_panel.set_results(result)
 
         if result.comparisons:
+            # If we split a single replicate dataset into per-row groups,
+            # precompute x_positions and y_tops for bracket drawing
+            stats_positions = None
+            if (len(datasets) == 1
+                    and datasets[0].get("raw_points")
+                    and len(datasets[0]["raw_points"][0]) > 1):
+                ds = datasets[0]
+                n_rows = len(ds["raw_points"][0])
+                x_positions = list(range(n_rows))  # bar positions: 0,1,2,...
+                y_tops = []
+                for row_idx in range(n_rows):
+                    y_val = ds["y"][row_idx]
+                    yerr = ds.get("yerr")
+                    if yerr is not None:
+                        if isinstance(yerr[0], list):  # asymmetric
+                            y_top = y_val + yerr[1][row_idx]
+                        else:
+                            y_top = y_val + yerr[row_idx]
+                    else:
+                        y_top = y_val
+                    y_tops.append(float(y_top))
+                stats_positions = {"x_positions": x_positions, "y_tops": y_tops}
+
             self.engine.draw_significance_brackets(
                 comparisons=result.comparisons,
                 datasets=datasets,
                 config=config,
                 display_mode=stats_cfg["display_mode"],
                 show_ns=stats_cfg["show_ns"],
+                positions_override=stats_positions,
             )
 
     def _run_and_draw_fit(self, datasets, config, fit_cfg):

@@ -457,6 +457,7 @@ class PlotEngine:
         config: "PlotConfig",
         display_mode: str = "stars",
         show_ns: bool = False,
+        positions_override: dict = None,
     ):
         """
         Draw Prism-style significance brackets on the current axes.
@@ -475,51 +476,51 @@ class PlotEngine:
 
         # Determine x positions and y tops per group
         n_groups = len(datasets)
-        if n_groups == 0:
+        if n_groups == 0 and positions_override is None:
             return
 
-        if pt == "bar":
-            n_bars = len(datasets[0].get("x", []))
-            # For bar charts, groups are datasets (different colored bars at each x)
-            # Brackets compare entire datasets (group-level), but we draw per x-tick
-            # Actually for stats, each "dataset" is one group, and we compare across groups
-            # x-positions: for group i, positions are np.arange(n_bars) + offset_i
-            pass  # We handle bar and non-bar generically below
+        # Use precomputed positions if provided (per-row replicate groups)
+        if positions_override is not None:
+            x_positions = positions_override["x_positions"]
+            y_tops = positions_override["y_tops"]
+        else:
+            if pt == "bar":
+                n_bars = len(datasets[0].get("x", []))
+                pass  # We handle bar and non-bar generically below
 
-        # Compute x positions for each group (0-indexed)
-        x_positions = []
-        y_tops = []
-        for i, ds in enumerate(datasets):
-            if pt in ("bar",):
-                # For bar: use the group center x-position (mean of bar positions)
-                n = len(datasets)
-                width = config.bar_width / n
-                offset = (i - n / 2 + 0.5) * width
-                x_pos = np.mean(np.arange(len(ds["x"]))) + offset
-                y_vals = np.array(ds["y"], dtype=float)
-                yerr = ds.get("yerr")
-                if yerr is not None:
-                    yerr_arr = np.array(yerr, dtype=float)
-                    y_top = float(np.nanmax(y_vals + yerr_arr))
+            # Compute x positions for each group (0-indexed)
+            x_positions = []
+            y_tops = []
+            for i, ds in enumerate(datasets):
+                if pt in ("bar",):
+                    n = len(datasets)
+                    width = config.bar_width / n
+                    offset = (i - n / 2 + 0.5) * width
+                    x_pos = np.mean(np.arange(len(ds["x"]))) + offset
+                    y_vals = np.array(ds["y"], dtype=float)
+                    yerr = ds.get("yerr")
+                    if yerr is not None:
+                        yerr_arr = np.array(yerr, dtype=float)
+                        y_top = float(np.nanmax(y_vals + yerr_arr))
+                    else:
+                        y_top = float(np.nanmax(y_vals))
+                elif pt in ("box", "violin"):
+                    x_pos = i + 1 if pt == "violin" else i + 1
+                    y_top = float(np.nanmax(ds["y"]))
+                elif pt == "errorbar":
+                    x_pos = float(np.mean(ds["x"])) if ds["x"] else i
+                    y_vals = np.array(ds["y"], dtype=float)
+                    yerr = ds.get("yerr")
+                    if yerr is not None:
+                        y_top = float(np.nanmax(y_vals + np.array(yerr, dtype=float)))
+                    else:
+                        y_top = float(np.nanmax(y_vals))
                 else:
-                    y_top = float(np.nanmax(y_vals))
-            elif pt in ("box", "violin"):
-                x_pos = i + 1 if pt == "violin" else i + 1
-                y_top = float(np.nanmax(ds["y"]))
-            elif pt == "errorbar":
-                x_pos = float(np.mean(ds["x"])) if ds["x"] else i
-                y_vals = np.array(ds["y"], dtype=float)
-                yerr = ds.get("yerr")
-                if yerr is not None:
-                    y_top = float(np.nanmax(y_vals + np.array(yerr, dtype=float)))
-                else:
-                    y_top = float(np.nanmax(y_vals))
-            else:
-                x_pos = i
-                y_top = float(np.nanmax(ds["y"])) if ds["y"] else 0
+                    x_pos = i
+                    y_top = float(np.nanmax(ds["y"])) if ds["y"] else 0
 
-            x_positions.append(x_pos)
-            y_tops.append(y_top)
+                x_positions.append(x_pos)
+                y_tops.append(y_top)
 
         if not y_tops:
             return
