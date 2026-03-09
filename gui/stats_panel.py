@@ -104,13 +104,16 @@ class StatsPanel(QWidget):
         results_group = QGroupBox("Results")
         results_layout = QVBoxLayout(results_group)
 
-        # Summary label (global test result)
-        self.summary_label = QLabel("")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.setStyleSheet(
-            "QLabel { font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; }"
+        # Summary text (global test result) — scrollable
+        self.summary_text = QTextEdit()
+        self.summary_text.setReadOnly(True)
+        self.summary_text.setMaximumHeight(80)
+        self.summary_text.setMinimumHeight(50)
+        self.summary_text.setStyleSheet(
+            "QTextEdit { font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; }"
         )
-        results_layout.addWidget(self.summary_label)
+        self.summary_text.setPlaceholderText("Run a test to see results...")
+        results_layout.addWidget(self.summary_text)
 
         # Select all / none buttons
         btn_row = QHBoxLayout()
@@ -137,7 +140,7 @@ class StatsPanel(QWidget):
 
         # Checkable comparison list
         self.comp_list = QListWidget()
-        self.comp_list.setMaximumHeight(200)
+        self.comp_list.setMinimumHeight(100)
         self.comp_list.setStyleSheet(
             "QListWidget { font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; }"
         )
@@ -243,7 +246,7 @@ class StatsPanel(QWidget):
             if " vs " in line and ("p=" in line or "p<" in line):
                 break
             header.append(line)
-        self.summary_label.setText("\n".join(header) if header else "No results.")
+        self.summary_text.setPlainText("\n".join(header) if header else "No results.")
 
         # Populate checklist
         self._updating_list = True
@@ -251,7 +254,11 @@ class StatsPanel(QWidget):
         for comp in self._comparisons:
             text = f"{comp.label_a} vs {comp.label_b}: p={comp.p_value:.4f} ({comp.stars})"
             item = QListWidgetItem(text)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsUserCheckable
+            )
             # Default: show significant, hide ns
             if comp.stars != "ns":
                 item.setCheckState(Qt.CheckState.Checked)
