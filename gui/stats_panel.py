@@ -101,18 +101,21 @@ class StatsPanel(QWidget):
 
     def _on_test_change(self):
         test = self.test_combo.currentText()
-        is_multi = test in ("One-way ANOVA", "Kruskal-Wallis")
-        self.posthoc_combo.setEnabled(is_multi)
-        self.compare_combo.setEnabled(is_multi)
-        self.control_spin.setEnabled(is_multi and self.compare_combo.currentText() == "Compare to control")
+        is_none = test == "(None)"
+        is_multi_test = test in ("One-way ANOVA", "Kruskal-Wallis")
+        # Post-hoc only for ANOVA/Kruskal; compare mode for all tests
+        self.posthoc_combo.setEnabled(is_multi_test)
+        self.compare_combo.setEnabled(not is_none)
+        is_ctrl = self.compare_combo.currentText() == "Compare to control"
+        self.control_spin.setEnabled(not is_none and is_ctrl)
         self.control_label.setEnabled(self.control_spin.isEnabled())
         self.stats_changed.emit()
 
     def _on_compare_change(self):
         is_ctrl = self.compare_combo.currentText() == "Compare to control"
         test = self.test_combo.currentText()
-        is_multi = test in ("One-way ANOVA", "Kruskal-Wallis")
-        self.control_spin.setEnabled(is_ctrl and is_multi)
+        is_none = test == "(None)"
+        self.control_spin.setEnabled(not is_none and is_ctrl)
         self.control_label.setEnabled(self.control_spin.isEnabled())
         self.stats_changed.emit()
 

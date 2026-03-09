@@ -140,16 +140,31 @@ class FigureTab(QWidget):
         """Extract group data from datasets, run test, draw brackets."""
         groups = []
         labels = []
-        for ds in datasets:
-            # If raw_points exist (replicate mode), combine all replicates as the group
-            if ds.get("raw_points"):
-                combined = []
-                for rp in ds["raw_points"]:
-                    combined.extend(rp)
-                groups.append(np.array(combined, dtype=float))
-            else:
-                groups.append(np.array(ds["y"], dtype=float))
-            labels.append(ds.get("label", f"Group {len(labels)+1}"))
+
+        # Check if we have a single replicate-group dataset with multiple rows
+        # In that case, each row (each x/bar) is a separate group for statistics
+        if (len(datasets) == 1
+                and datasets[0].get("raw_points")
+                and len(datasets[0]["raw_points"][0]) > 1):
+            ds = datasets[0]
+            n_rows = len(ds["raw_points"][0])  # number of bars/categories
+            n_reps = len(ds["raw_points"])      # number of replicate columns
+            x_labels = ds.get("x_labels", [str(v) for v in ds["x"]])
+            for row_idx in range(n_rows):
+                row_vals = [ds["raw_points"][rep][row_idx] for rep in range(n_reps)]
+                groups.append(np.array(row_vals, dtype=float))
+                labels.append(x_labels[row_idx] if row_idx < len(x_labels) else f"Group {row_idx+1}")
+        else:
+            for ds in datasets:
+                # If raw_points exist (replicate mode), combine all replicates as the group
+                if ds.get("raw_points"):
+                    combined = []
+                    for rp in ds["raw_points"]:
+                        combined.extend(rp)
+                    groups.append(np.array(combined, dtype=float))
+                else:
+                    groups.append(np.array(ds["y"], dtype=float))
+                labels.append(ds.get("label", f"Group {len(labels)+1}"))
 
         if len(groups) < 2:
             self._last_stats = StatsResult(summary="Need at least 2 groups for comparison.")

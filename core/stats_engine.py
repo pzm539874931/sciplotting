@@ -163,7 +163,12 @@ class StatsEngine:
         # ---- Two-group tests ----
         if test in ("Unpaired t-test", "Paired t-test", "Welch's t-test",
                      "Mann-Whitney U", "Wilcoxon signed-rank"):
-            return StatsEngine._two_group(groups[:2], labels[:2], test)
+            if len(groups) == 2:
+                return StatsEngine._two_group(groups, labels, test)
+            # Multiple groups: apply the two-group test pairwise
+            return StatsEngine._pairwise_two_group(
+                groups, labels, test, compare_mode, control_index
+            )
 
         # ---- Multi-group tests ----
         if test == "One-way ANOVA":
@@ -172,6 +177,50 @@ class StatsEngine:
             return StatsEngine._kruskal(groups, labels, posthoc, compare_mode, control_index)
 
         return StatsResult(test_name=test, summary=f"Unknown test: {test}")
+
+    # ------------------------------------------------------------------
+    #  Pairwise two-group tests (when >2 groups with a two-group test)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _pairwise_two_group(groups, labels, test, compare_mode, control_index) -> StatsResult:
+        """Apply a two-group test to all relevant pairs with Bonferroni correction."""
+        pairs = StatsEngine._get_pairs(len(groups), compare_mode, control_index)
+
+        # Run test on each pair
+        raw_results = []
+        for i, j in pairs:
+            two = StatsEngine._two_group(
+                [groups[i], groups[j]],
+                [labels[i], labels[j]],
+                test,
+            )
+            if two.comparisons:
+                c = two.comparisons[0]
+                raw_results.append((i, j, c.statistic, c.p_value))
+
+        m = len(raw_results) if raw_results else 1
+        comps = []
+        lines = [f"{test} (pairwise, Bonferroni corrected, {m} comparisons):"]
+        lines.append(f"Groups: {', '.join(f'{l}(n={len(g)})' for l, g in zip(labels, groups))}")
+
+        for i, j, stat, p in raw_results:
+            p_adj = min(p * m, 1.0)
+            comp = ComparisonResult(
+                group_a=i, group_b=j,
+                label_a=labels[i], label_b=labels[j],
+                p_value=p_adj, stars=p_to_stars(p_adj),
+                test_name=f"{test} (Bonferroni)",
+                statistic=stat,
+            )
+            comps.append(comp)
+            lines.append(f"  {labels[i]} vs {labels[j]}: p={p_adj:.6f} ({comp.stars})")
+
+        return StatsResult(
+            test_name=test,
+            comparisons=comps,
+            summary="\n".join(lines),
+        )
 
     # ------------------------------------------------------------------
     #  Two-group tests
