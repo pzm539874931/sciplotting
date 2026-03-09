@@ -775,6 +775,35 @@ class PlotEngine:
                 x1 = zone.x_max if zone.x_max is not None else xlim[1]
                 y0 = zone.y_min if zone.y_min is not None else ylim[0]
                 y1 = zone.y_max if zone.y_max is not None else ylim[1]
+            elif zone.zone_type == "ellipse":
+                # Ellipse: center + radii
+                from matplotlib.patches import Ellipse as MplEllipse
+                cx = zone.center_x if zone.center_x is not None else 0
+                cy = zone.center_y if zone.center_y is not None else 0
+                rx = zone.radius_x if zone.radius_x is not None else 1
+                ry = zone.radius_y if zone.radius_y is not None else 1
+                rot = getattr(zone, 'rotation', 0.0) or 0.0
+                ellipse = MplEllipse(
+                    (cx, cy), width=rx * 2, height=ry * 2, angle=rot,
+                    facecolor=zone.color,
+                    alpha=zone.alpha,
+                    edgecolor=zone.edge_color if zone.edge_width > 0 else "none",
+                    linewidth=zone.edge_width,
+                    linestyle=zone.edge_style,
+                    zorder=0,
+                )
+                ax.add_patch(ellipse)
+                # Draw label
+                if zone.show_label and zone.label:
+                    ax.text(
+                        cx, cy + ry * 1.05, zone.label,
+                        fontsize=zone.label_fontsize, color=zone.label_color,
+                        ha="center", va="bottom",
+                    )
+                # Restore limits and skip the rectangle drawing below
+                ax.set_xlim(xlim)
+                ax.set_ylim(ylim)
+                continue
             else:
                 continue
 

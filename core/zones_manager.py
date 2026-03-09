@@ -23,6 +23,7 @@ class ZoneType(str, Enum):
     HORIZONTAL = "horizontal"  # Horizontal band (spans full X, fixed Y range)
     VERTICAL = "vertical"      # Vertical band (spans full Y, fixed X range)
     RECTANGLE = "rectangle"    # Rectangular region (fixed X and Y range)
+    ELLIPSE = "ellipse"        # Ellipse/circle (center + radii)
 
 
 class LabelPosition(str, Enum):
@@ -68,10 +69,17 @@ class Zone:
     # horizontal: y_min to y_max (x spans full plot)
     # vertical: x_min to x_max (y spans full plot)
     # rectangle: all four bounds define the box
+    # ellipse: center_x, center_y, radius_x, radius_y
     x_min: Optional[float] = None
     x_max: Optional[float] = None
     y_min: Optional[float] = None
     y_max: Optional[float] = None
+    # Ellipse parameters
+    center_x: Optional[float] = None
+    center_y: Optional[float] = None
+    radius_x: Optional[float] = None
+    radius_y: Optional[float] = None
+    rotation: float = 0.0  # degrees
 
     # Appearance
     color: str = "#339AF0"  # Fill color
@@ -118,6 +126,11 @@ class Zone:
                 return False, "X min must be less than X max"
             if self.y_min >= self.y_max:
                 return False, "Y min must be less than Y max"
+        elif self.zone_type == "ellipse":
+            if any(v is None for v in [self.center_x, self.center_y, self.radius_x, self.radius_y]):
+                return False, "Ellipse zone requires center and radii"
+            if self.radius_x <= 0 or self.radius_y <= 0:
+                return False, "Radii must be positive"
         else:
             return False, f"Unknown zone type: {self.zone_type}"
 
@@ -249,6 +262,19 @@ def create_preset_zone(preset: str, **kwargs) -> Zone:
             edge_style="--",
             label="ROI",
             label_position="top_left",
+        ),
+        "cluster_circle": Zone(
+            name="Cluster",
+            zone_type="ellipse",
+            center_x=0.0, center_y=0.0,
+            radius_x=1.0, radius_y=1.0,
+            color="#339AF0",
+            alpha=0.15,
+            edge_color="#1971C2",
+            edge_style="--",
+            edge_width=1.5,
+            label="Cluster",
+            label_position="top_center",
         ),
     }
 

@@ -86,7 +86,7 @@ class ZoneEditorWidget(QWidget):
         type_layout = QHBoxLayout()
         type_layout.addWidget(QLabel("Type:"))
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["Horizontal Band", "Vertical Band", "Rectangle"])
+        self.type_combo.addItems(["Horizontal Band", "Vertical Band", "Rectangle", "Ellipse / Circle"])
         type_layout.addWidget(self.type_combo)
         layout.addLayout(type_layout)
 
@@ -118,6 +118,38 @@ class ZoneEditorWidget(QWidget):
         bounds_layout.addRow("X max:", self.x_max_spin)
         bounds_layout.addRow("Y min:", self.y_min_spin)
         bounds_layout.addRow("Y max:", self.y_max_spin)
+
+        # Ellipse-specific fields
+        self.cx_spin = QDoubleSpinBox()
+        self.cx_spin.setRange(-1e9, 1e9)
+        self.cx_spin.setDecimals(4)
+        self.cx_spin.valueChanged.connect(self._emit_change)
+        self.cy_spin = QDoubleSpinBox()
+        self.cy_spin.setRange(-1e9, 1e9)
+        self.cy_spin.setDecimals(4)
+        self.cy_spin.valueChanged.connect(self._emit_change)
+        self.rx_spin = QDoubleSpinBox()
+        self.rx_spin.setRange(0.001, 1e9)
+        self.rx_spin.setDecimals(4)
+        self.rx_spin.setValue(1.0)
+        self.rx_spin.valueChanged.connect(self._emit_change)
+        self.ry_spin = QDoubleSpinBox()
+        self.ry_spin.setRange(0.001, 1e9)
+        self.ry_spin.setDecimals(4)
+        self.ry_spin.setValue(1.0)
+        self.ry_spin.valueChanged.connect(self._emit_change)
+        self.rot_spin = QDoubleSpinBox()
+        self.rot_spin.setRange(-180, 180)
+        self.rot_spin.setDecimals(1)
+        self.rot_spin.setSuffix("°")
+        self.rot_spin.valueChanged.connect(self._emit_change)
+
+        bounds_layout.addRow("Center X:", self.cx_spin)
+        bounds_layout.addRow("Center Y:", self.cy_spin)
+        bounds_layout.addRow("Radius X:", self.rx_spin)
+        bounds_layout.addRow("Radius Y:", self.ry_spin)
+        bounds_layout.addRow("Rotation:", self.rot_spin)
+
         layout.addWidget(bounds_group)
 
         # Appearance Group
@@ -222,11 +254,17 @@ class ZoneEditorWidget(QWidget):
 
     def _on_type_changed(self, index):
         # Enable/disable bounds based on zone type
-        zone_type = ["horizontal", "vertical", "rectangle"][index]
+        zone_type = ["horizontal", "vertical", "rectangle", "ellipse"][index] if index < 4 else "horizontal"
+        is_ellipse = zone_type == "ellipse"
         self.x_min_spin.setEnabled(zone_type in ("vertical", "rectangle"))
         self.x_max_spin.setEnabled(zone_type in ("vertical", "rectangle"))
         self.y_min_spin.setEnabled(zone_type in ("horizontal", "rectangle"))
         self.y_max_spin.setEnabled(zone_type in ("horizontal", "rectangle"))
+        self.cx_spin.setEnabled(is_ellipse)
+        self.cy_spin.setEnabled(is_ellipse)
+        self.rx_spin.setEnabled(is_ellipse)
+        self.ry_spin.setEnabled(is_ellipse)
+        self.rot_spin.setEnabled(is_ellipse)
         self._emit_change()
 
     def _on_color_preset(self, preset_name: str):
@@ -236,7 +274,7 @@ class ZoneEditorWidget(QWidget):
 
     def get_zone(self) -> Zone:
         """Get the current zone configuration."""
-        type_map = {0: "horizontal", 1: "vertical", 2: "rectangle"}
+        type_map = {0: "horizontal", 1: "vertical", 2: "rectangle", 3: "ellipse"}
         style_map = {0: "-", 1: "--", 2: ":", 3: "-."}
         pos_map = {
             0: "top_left", 1: "top_center", 2: "top_right",
@@ -253,6 +291,11 @@ class ZoneEditorWidget(QWidget):
             x_max=self.x_max_spin.value() if self.x_max_spin.isEnabled() else None,
             y_min=self.y_min_spin.value() if self.y_min_spin.isEnabled() else None,
             y_max=self.y_max_spin.value() if self.y_max_spin.isEnabled() else None,
+            center_x=self.cx_spin.value() if self.cx_spin.isEnabled() else None,
+            center_y=self.cy_spin.value() if self.cy_spin.isEnabled() else None,
+            radius_x=self.rx_spin.value() if self.rx_spin.isEnabled() else None,
+            radius_y=self.ry_spin.value() if self.ry_spin.isEnabled() else None,
+            rotation=self.rot_spin.value() if self.rot_spin.isEnabled() else 0.0,
             color=self.fill_color_btn.get_color(),
             alpha=self.alpha_spin.value(),
             edge_color=self.edge_color_btn.get_color(),
@@ -273,7 +316,7 @@ class ZoneEditorWidget(QWidget):
 
         self.name_edit.setText(zone.name)
 
-        type_idx = {"horizontal": 0, "vertical": 1, "rectangle": 2}.get(zone.zone_type, 0)
+        type_idx = {"horizontal": 0, "vertical": 1, "rectangle": 2, "ellipse": 3}.get(zone.zone_type, 0)
         self.type_combo.setCurrentIndex(type_idx)
         self._on_type_changed(type_idx)  # Update enabled state
 
@@ -285,6 +328,16 @@ class ZoneEditorWidget(QWidget):
             self.y_min_spin.setValue(zone.y_min)
         if zone.y_max is not None:
             self.y_max_spin.setValue(zone.y_max)
+
+        if getattr(zone, 'center_x', None) is not None:
+            self.cx_spin.setValue(zone.center_x)
+        if getattr(zone, 'center_y', None) is not None:
+            self.cy_spin.setValue(zone.center_y)
+        if getattr(zone, 'radius_x', None) is not None:
+            self.rx_spin.setValue(zone.radius_x)
+        if getattr(zone, 'radius_y', None) is not None:
+            self.ry_spin.setValue(zone.radius_y)
+        self.rot_spin.setValue(getattr(zone, 'rotation', 0.0) or 0.0)
 
         self.fill_color_btn.set_color(zone.color)
         self.alpha_spin.setValue(zone.alpha)
@@ -407,7 +460,8 @@ class ZonesPanel(QWidget):
 
         for zone in self._zones_config.get_all_zones():
             icon = "━" if zone.zone_type == "horizontal" else \
-                   "┃" if zone.zone_type == "vertical" else "▢"
+                   "┃" if zone.zone_type == "vertical" else \
+                   "◯" if zone.zone_type == "ellipse" else "▢"
             vis = "" if zone.visible else " (hidden)"
             item = QListWidgetItem(f"{icon} {zone.name}{vis}")
             item.setToolTip(f"{zone.zone_type.title()}: {zone.label or 'No label'}")
