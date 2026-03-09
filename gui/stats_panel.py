@@ -118,19 +118,16 @@ class StatsPanel(QWidget):
         # Select all / none buttons
         btn_row = QHBoxLayout()
         self.select_all_btn = QPushButton("All")
-        self.select_all_btn.setFixedWidth(50)
         self.select_all_btn.setToolTip("Show all comparisons")
         self.select_all_btn.clicked.connect(self._select_all)
         btn_row.addWidget(self.select_all_btn)
 
         self.select_none_btn = QPushButton("None")
-        self.select_none_btn.setFixedWidth(50)
         self.select_none_btn.setToolTip("Hide all comparisons")
         self.select_none_btn.clicked.connect(self._select_none)
         btn_row.addWidget(self.select_none_btn)
 
         self.select_sig_btn = QPushButton("Sig. only")
-        self.select_sig_btn.setFixedWidth(65)
         self.select_sig_btn.setToolTip("Show only significant comparisons")
         self.select_sig_btn.clicked.connect(self._select_significant)
         btn_row.addWidget(self.select_sig_btn)
