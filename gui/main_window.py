@@ -266,13 +266,14 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("New project created")
 
     def _open_project(self):
-        """Open project manager dialog."""
-        dialog = ProjectsDialog(self.project_mgr, self)
-        dialog.project_selected.connect(self._load_project_from_path)
-        if dialog.exec():
-            if dialog.get_selected_path() is None:
-                # User clicked "New Project"
-                self._new_project()
+        """Open a project file from any location."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Project",
+            str(self.project_mgr.PROJECTS_DIR),
+            "SciPlotGUI Projects (*.sciplot);;All Files (*)"
+        )
+        if path:
+            self._load_project_from_path(path)
 
     def _load_project_from_path(self, path: str):
         """Load project from file path."""
@@ -335,19 +336,12 @@ class MainWindow(QMainWindow):
         self._sync_layout()
 
     def _save_project(self):
-        """Save current project."""
-        state = self._collect_project_state()
-
+        """Save current project. If no path set yet, behave like Save As."""
         if self.project_mgr.get_current_path() is None:
-            # First save - ask for name
-            name, ok = QInputDialog.getText(
-                self, "Save Project", "Project name:", text=self._current_project_name
-            )
-            if not ok or not name.strip():
-                return
-            state.name = name.strip()
-            self._current_project_name = name.strip()
+            self._save_project_as()
+            return
 
+        state = self._collect_project_state()
         try:
             path = self.project_mgr.save_project(state)
             self._update_title()
