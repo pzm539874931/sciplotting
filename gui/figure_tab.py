@@ -1,8 +1,10 @@
 """
 FigureTab - a self-contained figure editor tab.
 Each tab has its own DataPanel, ConfigPanel, StatsPanel, FittingPanel, canvas preview.
+Supports undo/redo via state snapshots.
 """
 
+import copy
 import numpy as np
 
 from PyQt6.QtWidgets import (
@@ -36,13 +38,19 @@ class FigureTab(QWidget):
         self._last_stats: StatsResult = StatsResult()
         self._last_fit: FitResult = FitResult()
 
+        # Undo/redo
+        self._undo_stack: list[dict] = []
+        self._redo_stack: list[dict] = []
+        self._max_undo = 50
+        self._restoring = False  # flag to prevent snapshot during restore
+
         self._build_ui()
 
         # Debounce
         self._timer = QTimer()
         self._timer.setSingleShot(True)
         self._timer.setInterval(300)
-        self._timer.timeout.connect(self.refresh_preview)
+        self._timer.timeout.connect(self._on_debounce_fire)
 
         self.data_panel.data_changed.connect(self._schedule)
         self.config_panel.config_changed.connect(self._schedule)
@@ -92,6 +100,96 @@ class FigureTab(QWidget):
 
     def _schedule(self):
         self._timer.start()
+
+    def _on_debounce_fire(self):
+        """Called when debounce timer fires: snapshot state then refresh."""
+        if not self._restoring:
+            self._push_undo()
+        self.refresh_preview()
+
+    # ----------------------------------------------------------------
+    #  Undo / Redo
+    # ----------------------------------------------------------------
+
+    def _capture_state(self) -> dict:
+        """Capture current UI state as a serializable dict."""
+        return {
+            "config": self.config_panel.get_config().to_dict(),
+            "stats": self.stats_panel.get_stats_config(),
+            "fitting": self.fitting_panel.get_fitting_config(),
+            "zones": self.get_zones_config(),
+            "data": self.data_panel.get_embedded_data(),
+        }
+
+    def _restore_state(self, state: dict):
+        """Restore UI from a state dict without triggering new undo snapshots."""
+        self._restoring = True
+        try:
+            # Restore data first (so columns exist for config)
+            if state.get("data"):
+                self.data_panel.set_embedded_data(state["data"])
+
+            # Restore config
+            if state.get("config"):
+                cfg = PlotConfig()
+                cfg.from_dict(state["config"])
+                self.config_panel.set_config(cfg)
+
+            # Restore zones
+            if state.get("zones"):
+                self.set_zones_config(state["zones"])
+
+            # Restore stats panel settings
+            if state.get("stats"):
+                sc = state["stats"]
+                self.stats_panel.test_combo.setCurrentText(sc.get("test", "(None)"))
+                self.stats_panel.posthoc_combo.setCurrentText(sc.get("posthoc", "Tukey HSD"))
+                self.stats_panel.compare_combo.setCurrentText(sc.get("compare_mode", "All pairs"))
+                self.stats_panel.control_spin.setValue(sc.get("control_index", 0))
+                self.stats_panel.display_combo.setCurrentText(sc.get("display_mode", "stars"))
+                self.stats_panel.show_ns_check.setChecked(sc.get("show_ns", False))
+                self.stats_panel.bracket_check.setChecked(sc.get("show_brackets", True))
+
+            # Refresh preview
+            self.refresh_preview()
+        finally:
+            self._restoring = False
+
+    def _push_undo(self):
+        """Push current state onto undo stack."""
+        state = self._capture_state()
+        # Don't push if identical to top of stack
+        if self._undo_stack:
+            if self._undo_stack[-1] == state:
+                return
+        self._undo_stack.append(state)
+        if len(self._undo_stack) > self._max_undo:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def undo(self):
+        """Undo last change."""
+        if not self._undo_stack:
+            return
+        # Save current state to redo
+        self._redo_stack.append(self._capture_state())
+        state = self._undo_stack.pop()
+        self._restore_state(state)
+
+    def redo(self):
+        """Redo last undone change."""
+        if not self._redo_stack:
+            return
+        # Save current state to undo (without clearing redo)
+        self._undo_stack.append(self._capture_state())
+        state = self._redo_stack.pop()
+        self._restore_state(state)
+
+    def can_undo(self) -> bool:
+        return len(self._undo_stack) > 0
+
+    def can_redo(self) -> bool:
+        return len(self._redo_stack) > 0
 
     def refresh_preview(self):
         try:

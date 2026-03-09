@@ -105,6 +105,19 @@ class MainWindow(QMainWindow):
         quit_act.triggered.connect(self.close)
         file_menu.addAction(quit_act)
 
+        # Edit menu
+        edit_menu = menubar.addMenu("Edit")
+
+        undo_act = QAction("Undo", self)
+        undo_act.setShortcut(QKeySequence("Ctrl+Z"))
+        undo_act.triggered.connect(self._undo)
+        edit_menu.addAction(undo_act)
+
+        redo_act = QAction("Redo", self)
+        redo_act.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        redo_act.triggered.connect(self._redo)
+        edit_menu.addAction(redo_act)
+
         # Figure menu
         fig_menu = menubar.addMenu("Figure")
 
@@ -500,6 +513,20 @@ class MainWindow(QMainWindow):
     # ================================================================
     #  File operations
     # ================================================================
+
+    # ----------------------------------------------------------------
+    #  Undo / Redo
+    # ----------------------------------------------------------------
+
+    def _undo(self):
+        tab = self._current_figure_tab()
+        if tab:
+            tab.undo()
+
+    def _redo(self):
+        tab = self._current_figure_tab()
+        if tab:
+            tab.redo()
 
     def _menu_open_csv(self):
         tab = self._current_figure_tab()
