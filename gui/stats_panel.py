@@ -7,7 +7,7 @@ then shows the full results summary and controls significance bracket display.
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QFormLayout, QComboBox, QGroupBox,
     QCheckBox, QTextEdit, QSpinBox, QPushButton, QLabel,
-    QHBoxLayout,
+    QHBoxLayout, QDoubleSpinBox,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
@@ -78,6 +78,23 @@ class StatsPanel(QWidget):
         self.bracket_check.toggled.connect(lambda: self.stats_changed.emit())
         disp_layout.addRow(self.bracket_check)
 
+        # Bracket style
+        self.bracket_style_combo = QComboBox()
+        self.bracket_style_combo.addItems([
+            "Solid", "Dashed", "Dotted", "Dash-dot",
+        ])
+        self.bracket_style_combo.currentIndexChanged.connect(lambda: self.stats_changed.emit())
+        disp_layout.addRow("Bracket style:", self.bracket_style_combo)
+
+        # Bracket line width
+        self.bracket_width_spin = QDoubleSpinBox()
+        self.bracket_width_spin.setRange(0.3, 5.0)
+        self.bracket_width_spin.setSingleStep(0.25)
+        self.bracket_width_spin.setValue(1.0)
+        self.bracket_width_spin.setSuffix(" pt")
+        self.bracket_width_spin.valueChanged.connect(lambda: self.stats_changed.emit())
+        disp_layout.addRow("Bracket width:", self.bracket_width_spin)
+
         layout.addWidget(disp_group)
 
         # ---- Results ----
@@ -146,6 +163,14 @@ class StatsPanel(QWidget):
         """Display the analysis results."""
         self.results_text.setPlainText(result.summary or "No results.")
 
+    def get_bracket_linestyle(self) -> str:
+        """Return matplotlib linestyle string."""
+        mapping = {"Solid": "-", "Dashed": "--", "Dotted": ":", "Dash-dot": "-."}
+        return mapping.get(self.bracket_style_combo.currentText(), "-")
+
+    def get_bracket_linewidth(self) -> float:
+        return self.bracket_width_spin.value()
+
     def get_stats_config(self) -> dict:
         """Return all stats configuration as a dict."""
         return {
@@ -156,4 +181,7 @@ class StatsPanel(QWidget):
             "display_mode": self.get_display_mode(),
             "show_ns": self.get_show_ns(),
             "show_brackets": self.get_show_brackets(),
+            "bracket_linestyle": self.get_bracket_linestyle(),
+            "bracket_linewidth": self.get_bracket_linewidth(),
+            "bracket_style_name": self.bracket_style_combo.currentText(),
         }

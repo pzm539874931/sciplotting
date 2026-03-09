@@ -149,6 +149,10 @@ class FigureTab(QWidget):
                 self.stats_panel.display_combo.setCurrentText(sc.get("display_mode", "stars"))
                 self.stats_panel.show_ns_check.setChecked(sc.get("show_ns", False))
                 self.stats_panel.bracket_check.setChecked(sc.get("show_brackets", True))
+                if sc.get("bracket_style_name"):
+                    self.stats_panel.bracket_style_combo.setCurrentText(sc["bracket_style_name"])
+                if sc.get("bracket_linewidth"):
+                    self.stats_panel.bracket_width_spin.setValue(sc["bracket_linewidth"])
 
             # Refresh preview
             self.refresh_preview()
@@ -311,6 +315,8 @@ class FigureTab(QWidget):
                 display_mode=stats_cfg["display_mode"],
                 show_ns=stats_cfg["show_ns"],
                 positions_override=stats_positions,
+                bracket_linestyle=stats_cfg.get("bracket_linestyle", "-"),
+                bracket_linewidth=stats_cfg.get("bracket_linewidth", 1.0),
             )
 
     def _run_and_draw_fit(self, datasets, config, fit_cfg):

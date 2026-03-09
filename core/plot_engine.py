@@ -458,6 +458,8 @@ class PlotEngine:
         display_mode: str = "stars",
         show_ns: bool = False,
         positions_override: dict = None,
+        bracket_linestyle: str = "-",
+        bracket_linewidth: float = 1.0,
     ):
         """
         Draw Prism-style significance brackets on the current axes.
@@ -549,7 +551,8 @@ class PlotEngine:
             ax.plot(
                 [x1, x1, x2, x2],
                 [y_bar - bracket_dy, y_bar, y_bar, y_bar - bracket_dy],
-                color="black", linewidth=1.0, clip_on=False,
+                color="black", linewidth=bracket_linewidth,
+                linestyle=bracket_linestyle, clip_on=False,
             )
 
             # Draw text
