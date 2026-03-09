@@ -55,6 +55,7 @@ class FigureTab(QWidget):
         self.data_panel.data_changed.connect(self._schedule)
         self.config_panel.config_changed.connect(self._schedule)
         self.stats_panel.stats_changed.connect(self._schedule)
+        self.stats_panel.visibility_changed.connect(self._schedule)
         self.fitting_panel.fitting_changed.connect(self._schedule)
         self.zones_panel.zones_changed.connect(self._schedule)
 
@@ -153,6 +154,15 @@ class FigureTab(QWidget):
                     self.stats_panel.bracket_style_combo.setCurrentText(sc["bracket_style_name"])
                 if sc.get("bracket_linewidth"):
                     self.stats_panel.bracket_width_spin.setValue(sc["bracket_linewidth"])
+                # Restore hidden comparisons after results are populated
+                hidden = set(sc.get("hidden_comparisons", []))
+                if hidden:
+                    self.stats_panel._updating_list = True
+                    for i in range(self.stats_panel.comp_list.count()):
+                        if i in hidden:
+                            self.stats_panel.comp_list.item(i).setCheckState(
+                                Qt.CheckState.Unchecked)
+                    self.stats_panel._updating_list = False
 
             # Refresh preview
             self.refresh_preview()
@@ -308,16 +318,19 @@ class FigureTab(QWidget):
                     y_tops.append(float(y_top))
                 stats_positions = {"x_positions": x_positions, "y_tops": y_tops}
 
-            self.engine.draw_significance_brackets(
-                comparisons=result.comparisons,
-                datasets=datasets,
-                config=config,
-                display_mode=stats_cfg["display_mode"],
-                show_ns=stats_cfg["show_ns"],
-                positions_override=stats_positions,
-                bracket_linestyle=stats_cfg.get("bracket_linestyle", "-"),
-                bracket_linewidth=stats_cfg.get("bracket_linewidth", 1.0),
-            )
+            # Only draw comparisons the user has checked
+            visible_comps = self.stats_panel.get_visible_comparisons()
+            if visible_comps:
+                self.engine.draw_significance_brackets(
+                    comparisons=visible_comps,
+                    datasets=datasets,
+                    config=config,
+                    display_mode=stats_cfg["display_mode"],
+                    show_ns=True,  # filtering already done via checkboxes
+                    positions_override=stats_positions,
+                    bracket_linestyle=stats_cfg.get("bracket_linestyle", "-"),
+                    bracket_linewidth=stats_cfg.get("bracket_linewidth", 1.0),
+                )
 
     def _run_and_draw_fit(self, datasets, config, fit_cfg):
         """Run curve fitting and draw the fit curve on the plot."""
