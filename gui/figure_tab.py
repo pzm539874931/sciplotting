@@ -8,7 +8,7 @@ import copy
 import numpy as np
 
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget,
+    QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget, QScrollArea,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
@@ -44,6 +44,7 @@ class FigureTab(QWidget):
         self._redo_stack: list[dict] = []
         self._max_undo = 50
         self._restoring = False  # flag to prevent snapshot during restore
+        self._visibility_only = False  # flag to skip stats re-run
 
         self._build_ui()
 
@@ -56,7 +57,7 @@ class FigureTab(QWidget):
         self.data_panel.data_changed.connect(self._schedule)
         self.config_panel.config_changed.connect(self._schedule)
         self.stats_panel.stats_changed.connect(self._schedule)
-        self.stats_panel.visibility_changed.connect(self._schedule)
+        self.stats_panel.visibility_changed.connect(self._schedule_visibility_only)
         self.fitting_panel.fitting_changed.connect(self._schedule)
         self.zones_panel.zones_changed.connect(self._schedule)
         self.annotations_panel.annotations_changed.connect(self._schedule)
@@ -88,7 +89,10 @@ class FigureTab(QWidget):
         right_tabs.addTab(self.config_panel, "Config")
 
         self.stats_panel = StatsPanel()
-        right_tabs.addTab(self.stats_panel, "Statistics")
+        stats_scroll = QScrollArea()
+        stats_scroll.setWidgetResizable(True)
+        stats_scroll.setWidget(self.stats_panel)
+        right_tabs.addTab(stats_scroll, "Statistics")
 
         self.fitting_panel = FittingPanel()
         right_tabs.addTab(self.fitting_panel, "Fitting")
@@ -105,6 +109,11 @@ class FigureTab(QWidget):
         layout.addWidget(splitter)
 
     def _schedule(self):
+        self._visibility_only = False
+        self._timer.start()
+
+    def _schedule_visibility_only(self):
+        self._visibility_only = True
         self._timer.start()
 
     def _on_debounce_fire(self):
@@ -230,7 +239,11 @@ class FigureTab(QWidget):
             # Run stats if a test is selected
             stats_cfg = self.stats_panel.get_stats_config()
             if stats_cfg["test"] != "(None)" and stats_cfg["show_brackets"]:
-                self._run_and_draw_stats(datasets, config, stats_cfg)
+                if self._visibility_only and self._last_stats.comparisons:
+                    # Only visibility changed — skip re-running stats, just redraw brackets
+                    self._draw_stats_brackets(datasets, config, stats_cfg)
+                else:
+                    self._run_and_draw_stats(datasets, config, stats_cfg)
 
             # Run curve fitting if a model is selected
             fit_cfg = self.fitting_panel.get_fitting_config()
@@ -310,42 +323,43 @@ class FigureTab(QWidget):
         self.stats_panel.set_results(result)
 
         if result.comparisons:
-            # If we split a single replicate dataset into per-row groups,
-            # precompute x_positions and y_tops for bracket drawing
-            stats_positions = None
-            if (len(datasets) == 1
-                    and datasets[0].get("raw_points")
-                    and len(datasets[0]["raw_points"][0]) > 1):
-                ds = datasets[0]
-                n_rows = len(ds["raw_points"][0])
-                x_positions = list(range(n_rows))  # bar positions: 0,1,2,...
-                y_tops = []
-                for row_idx in range(n_rows):
-                    y_val = ds["y"][row_idx]
-                    yerr = ds.get("yerr")
-                    if yerr is not None:
-                        if isinstance(yerr[0], list):  # asymmetric
-                            y_top = y_val + yerr[1][row_idx]
-                        else:
-                            y_top = y_val + yerr[row_idx]
-                    else:
-                        y_top = y_val
-                    y_tops.append(float(y_top))
-                stats_positions = {"x_positions": x_positions, "y_tops": y_tops}
+            self._draw_stats_brackets(datasets, config, stats_cfg)
 
-            # Only draw comparisons the user has checked
-            visible_comps = self.stats_panel.get_visible_comparisons()
-            if visible_comps:
-                self.engine.draw_significance_brackets(
-                    comparisons=visible_comps,
-                    datasets=datasets,
-                    config=config,
-                    display_mode=stats_cfg["display_mode"],
-                    show_ns=True,  # filtering already done via checkboxes
-                    positions_override=stats_positions,
-                    bracket_linestyle=stats_cfg.get("bracket_linestyle", "-"),
-                    bracket_linewidth=stats_cfg.get("bracket_linewidth", 1.0),
-                )
+    def _draw_stats_brackets(self, datasets, config, stats_cfg):
+        """Draw significance brackets using current visible comparisons (no re-run)."""
+        stats_positions = None
+        if (len(datasets) == 1
+                and datasets[0].get("raw_points")
+                and len(datasets[0]["raw_points"][0]) > 1):
+            ds = datasets[0]
+            n_rows = len(ds["raw_points"][0])
+            x_positions = list(range(n_rows))
+            y_tops = []
+            for row_idx in range(n_rows):
+                y_val = ds["y"][row_idx]
+                yerr = ds.get("yerr")
+                if yerr is not None:
+                    if isinstance(yerr[0], list):
+                        y_top = y_val + yerr[1][row_idx]
+                    else:
+                        y_top = y_val + yerr[row_idx]
+                else:
+                    y_top = y_val
+                y_tops.append(float(y_top))
+            stats_positions = {"x_positions": x_positions, "y_tops": y_tops}
+
+        visible_comps = self.stats_panel.get_visible_comparisons()
+        if visible_comps:
+            self.engine.draw_significance_brackets(
+                comparisons=visible_comps,
+                datasets=datasets,
+                config=config,
+                display_mode=stats_cfg["display_mode"],
+                show_ns=True,
+                positions_override=stats_positions,
+                bracket_linestyle=stats_cfg.get("bracket_linestyle", "-"),
+                bracket_linewidth=stats_cfg.get("bracket_linewidth", 1.0),
+            )
 
     def _run_and_draw_fit(self, datasets, config, fit_cfg):
         """Run curve fitting and draw the fit curve on the plot."""
