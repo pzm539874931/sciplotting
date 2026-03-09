@@ -153,6 +153,19 @@ class DataTableWidget(QWidget):
         """Show context menu at position."""
         menu = QMenu(self)
 
+        # Clipboard operations (at top for quick access)
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut(QKeySequence("Ctrl+C"))
+        copy_action.triggered.connect(self._copy_selection)
+        menu.addAction(copy_action)
+
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut(QKeySequence("Ctrl+V"))
+        paste_action.triggered.connect(self._paste_from_clipboard)
+        menu.addAction(paste_action)
+
+        menu.addSeparator()
+
         # Row operations
         insert_row = QAction("Insert Row Above", self)
         insert_row.triggered.connect(self._insert_row_above)
@@ -162,7 +175,7 @@ class DataTableWidget(QWidget):
         insert_row_below.triggered.connect(self._insert_row_below)
         menu.addAction(insert_row_below)
 
-        delete_row = QAction("Delete Row", self)
+        delete_row = QAction("Delete Selected Rows", self)
         delete_row.triggered.connect(self._delete_selected_rows)
         menu.addAction(delete_row)
 
@@ -177,22 +190,21 @@ class DataTableWidget(QWidget):
         insert_col_right.triggered.connect(self._insert_column_right)
         menu.addAction(insert_col_right)
 
-        delete_col = QAction("Delete Column", self)
+        delete_col = QAction("Delete Selected Columns", self)
         delete_col.triggered.connect(self._delete_selected_columns)
         menu.addAction(delete_col)
 
         menu.addSeparator()
 
-        # Clipboard operations
-        paste_action = QAction("Paste from Clipboard", self)
-        paste_action.setShortcut(QKeySequence("Ctrl+V"))
-        paste_action.triggered.connect(self._paste_from_clipboard)
-        menu.addAction(paste_action)
+        # Sort operations
+        sort_menu = menu.addMenu("Sort Column")
+        sort_asc = QAction("Ascending", self)
+        sort_asc.triggered.connect(lambda: self._sort_column(ascending=True))
+        sort_menu.addAction(sort_asc)
 
-        copy_action = QAction("Copy Selection", self)
-        copy_action.setShortcut(QKeySequence("Ctrl+C"))
-        copy_action.triggered.connect(self._copy_selection)
-        menu.addAction(copy_action)
+        sort_desc = QAction("Descending", self)
+        sort_desc.triggered.connect(lambda: self._sort_column(ascending=False))
+        sort_menu.addAction(sort_desc)
 
         menu.addSeparator()
 
@@ -204,6 +216,13 @@ class DataTableWidget(QWidget):
         fill_series = QAction("Fill Series...", self)
         fill_series.triggered.connect(self._fill_series)
         menu.addAction(fill_series)
+
+        menu.addSeparator()
+
+        # Clear selection
+        clear_sel = QAction("Clear Selection", self)
+        clear_sel.triggered.connect(self._clear_selection)
+        menu.addAction(clear_sel)
 
         menu.exec(self.table.mapToGlobal(pos))
 
@@ -372,28 +391,102 @@ class DataTableWidget(QWidget):
         self.table.blockSignals(False)
         self.data_changed.emit()
 
+    # ---- Sort Operations ----
+
+    def _sort_column(self, ascending: bool = True):
+        """Sort the current column ascending or descending."""
+        col = self.table.currentColumn()
+        if col < 0:
+            return
+
+        # Get column data with row indices
+        data_with_indices = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, col)
+            text = item.text().strip() if item else ""
+            # Try to convert to number for proper sorting
+            try:
+                value = float(text) if text else float('inf')
+            except ValueError:
+                value = text if text else ""
+            data_with_indices.append((row, value, text))
+
+        # Sort by value
+        def sort_key(x):
+            val = x[1]
+            if isinstance(val, float):
+                return (0, val)  # Numbers first
+            elif val == "":
+                return (2, "")  # Empty last
+            else:
+                return (1, val.lower())  # Strings in middle
+
+        data_with_indices.sort(key=sort_key, reverse=not ascending)
+
+        # Reorder all columns based on sort
+        self.table.blockSignals(True)
+        all_row_data = []
+        for row in range(self.table.rowCount()):
+            row_data = []
+            for c in range(self.table.columnCount()):
+                item = self.table.item(row, c)
+                row_data.append(item.text() if item else "")
+            all_row_data.append(row_data)
+
+        for new_row, (old_row, _, _) in enumerate(data_with_indices):
+            for c in range(self.table.columnCount()):
+                self.table.setItem(new_row, c, QTableWidgetItem(all_row_data[old_row][c]))
+
+        self.table.blockSignals(False)
+        self.data_changed.emit()
+
+    def _clear_selection(self):
+        """Clear content of selected cells."""
+        selected = self.table.selectedItems()
+        if not selected:
+            return
+
+        self.table.blockSignals(True)
+        for item in selected:
+            item.setText("")
+        self.table.blockSignals(False)
+        self.data_changed.emit()
+
     # ---- Clipboard Operations ----
 
     def _paste_from_clipboard(self):
-        """Paste data from clipboard (tab-separated)."""
+        """Paste data from clipboard (tab or comma-separated, supports Excel/Prism)."""
         clipboard = QApplication.clipboard()
         text = clipboard.text()
         if not text:
             return
 
+        # Normalize line endings
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
         lines = text.strip().split('\n')
         if not lines:
             return
 
-        # Detect if first row is headers (contains non-numeric values)
-        first_row = lines[0].split('\t')
+        # Detect delimiter: tab (Excel/Prism) or comma (CSV)
+        # Check first line for delimiter
+        first_line = lines[0]
+        if '\t' in first_line:
+            delimiter = '\t'
+        elif ',' in first_line:
+            delimiter = ','
+        else:
+            delimiter = '\t'  # Default to tab
+
+        # Parse first row to detect headers
+        first_row = [v.strip().strip('"') for v in first_line.split(delimiter)]
         has_headers = False
         for val in first_row:
             try:
                 float(val)
             except ValueError:
-                has_headers = True
-                break
+                if val:  # Non-empty non-numeric = header
+                    has_headers = True
+                    break
 
         self.table.blockSignals(True)
 
@@ -404,30 +497,41 @@ class DataTableWidget(QWidget):
         if start_col < 0:
             start_col = 0
 
+        data_lines = lines
         if has_headers:
             # Set headers from first row
             for i, header in enumerate(first_row):
                 col_idx = start_col + i
-                if col_idx >= self.table.columnCount():
-                    self.table.insertColumn(col_idx)
+                # Auto-expand columns if needed
+                while col_idx >= self.table.columnCount():
+                    self.table.insertColumn(self.table.columnCount())
+                    self.table.setHorizontalHeaderItem(
+                        self.table.columnCount() - 1,
+                        QTableWidgetItem(f"Col{self.table.columnCount()}")
+                    )
                 self.table.setHorizontalHeaderItem(col_idx, QTableWidgetItem(header.strip()))
-            lines = lines[1:]  # Skip header row
+            data_lines = lines[1:]  # Skip header row
 
         # Paste data
-        for row_offset, line in enumerate(lines):
-            values = line.split('\t')
+        for row_offset, line in enumerate(data_lines):
+            values = [v.strip().strip('"') for v in line.split(delimiter)]
             row_idx = start_row + row_offset
 
-            if row_idx >= self.table.rowCount():
-                self.table.insertRow(row_idx)
+            # Auto-expand rows if needed
+            while row_idx >= self.table.rowCount():
+                self.table.insertRow(self.table.rowCount())
 
             for col_offset, value in enumerate(values):
                 col_idx = start_col + col_offset
-                if col_idx >= self.table.columnCount():
-                    self.table.insertColumn(col_idx)
-                    self.table.setHorizontalHeaderItem(col_idx, QTableWidgetItem(f"Col{col_idx + 1}"))
+                # Auto-expand columns if needed
+                while col_idx >= self.table.columnCount():
+                    self.table.insertColumn(self.table.columnCount())
+                    self.table.setHorizontalHeaderItem(
+                        self.table.columnCount() - 1,
+                        QTableWidgetItem(f"Col{self.table.columnCount()}")
+                    )
 
-                item = QTableWidgetItem(value.strip())
+                item = QTableWidgetItem(value)
                 self.table.setItem(row_idx, col_idx, item)
 
         self.row_spin.setValue(self.table.rowCount())
