@@ -150,6 +150,7 @@ class AnnotationsPanel(QWidget):
             self.annotations_changed.emit()
 
     def _refresh_list(self):
+        self.ann_list.blockSignals(True)
         self.ann_list.clear()
         for ann in self._annotations:
             if ann.ann_type in ("H-Line", "V-Line"):
@@ -161,6 +162,7 @@ class AnnotationsPanel(QWidget):
             if ann.text:
                 label += f" ({ann.text[:20]})" if ann.ann_type != "Text" else ""
             self.ann_list.addItem(label)
+        self.ann_list.blockSignals(False)
 
     def _on_select(self, row):
         if row < 0 or row >= len(self._annotations):
@@ -222,8 +224,16 @@ class AnnotationsPanel(QWidget):
         ann.line_style = self.ls_combo.currentText()
         ann.color = self._color
         ann.visible = self.visible_check.isChecked()
-        self._refresh_list()
-        self.ann_list.setCurrentRow(row)
+        # Update list item text without rebuilding (avoids recursion)
+        item = self.ann_list.item(row)
+        if item:
+            if ann.ann_type in ("H-Line", "V-Line"):
+                label = f"{ann.ann_type} @ {ann.value:.2f}"
+            elif ann.ann_type == "Arrow":
+                label = f"Arrow: {ann.text}"
+            else:
+                label = f"Text: {ann.text}"
+            item.setText(label)
         self.annotations_changed.emit()
 
     def _pick_color(self):
