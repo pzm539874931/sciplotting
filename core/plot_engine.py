@@ -692,49 +692,52 @@ class PlotEngine:
         from core.annotations_manager import LINE_STYLES
 
         for ann in annotations:
-            ls = LINE_STYLES.get(ann.line_style, "-")
-            if ann.ann_type == "Text":
-                ax.text(
-                    ann.x, ann.y, ann.text,
-                    fontsize=ann.font_size, color=ann.color,
-                    ha="center", va="bottom",
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
-                              edgecolor=ann.color, alpha=0.8),
-                )
-            elif ann.ann_type == "Arrow":
-                ax.annotate(
-                    ann.text, xy=(ann.x2, ann.y2), xytext=(ann.x, ann.y),
-                    fontsize=ann.font_size, color=ann.color,
-                    arrowprops=dict(
-                        arrowstyle="->", color=ann.color,
-                        lw=ann.line_width, linestyle=ls,
-                    ),
-                    ha="center", va="bottom",
-                )
-            elif ann.ann_type == "H-Line":
-                ax.axhline(
-                    y=ann.value, color=ann.color,
-                    linewidth=ann.line_width, linestyle=ls,
-                    label=ann.text if ann.text else None,
-                )
-                if ann.text:
+            try:
+                ls = LINE_STYLES.get(ann.line_style, "-")
+                if ann.ann_type == "Text":
                     ax.text(
-                        ax.get_xlim()[1], ann.value, f" {ann.text}",
+                        ann.x, ann.y, ann.text,
                         fontsize=ann.font_size, color=ann.color,
-                        va="bottom", ha="right",
+                        ha="center", va="bottom",
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                                  edgecolor=ann.color, alpha=0.8),
                     )
-            elif ann.ann_type == "V-Line":
-                ax.axvline(
-                    x=ann.value, color=ann.color,
-                    linewidth=ann.line_width, linestyle=ls,
-                    label=ann.text if ann.text else None,
-                )
-                if ann.text:
-                    ax.text(
-                        ann.value, ax.get_ylim()[1], f" {ann.text}",
+                elif ann.ann_type == "Arrow":
+                    ax.annotate(
+                        ann.text, xy=(ann.x2, ann.y2), xytext=(ann.x, ann.y),
                         fontsize=ann.font_size, color=ann.color,
-                        va="top", ha="left", rotation=90,
+                        arrowprops=dict(
+                            arrowstyle="->", color=ann.color,
+                            lw=ann.line_width, linestyle=ls,
+                        ),
+                        ha="center", va="bottom",
                     )
+                elif ann.ann_type == "H-Line":
+                    ax.axhline(
+                        y=ann.value, color=ann.color,
+                        linewidth=ann.line_width, linestyle=ls,
+                        label=ann.text if ann.text else None,
+                    )
+                    if ann.text:
+                        ax.text(
+                            ax.get_xlim()[1], ann.value, f" {ann.text}",
+                            fontsize=ann.font_size, color=ann.color,
+                            va="bottom", ha="right",
+                        )
+                elif ann.ann_type == "V-Line":
+                    ax.axvline(
+                        x=ann.value, color=ann.color,
+                        linewidth=ann.line_width, linestyle=ls,
+                        label=ann.text if ann.text else None,
+                    )
+                    if ann.text:
+                        ax.text(
+                            ann.value, ax.get_ylim()[1], f" {ann.text}",
+                            fontsize=ann.font_size, color=ann.color,
+                            va="top", ha="left", rotation=90,
+                        )
+            except Exception:
+                pass  # skip broken annotations
 
     def draw_zones(self, zones: list, config: "PlotConfig"):
         """

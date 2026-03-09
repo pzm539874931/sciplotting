@@ -256,9 +256,12 @@ class FigureTab(QWidget):
                 self.engine.draw_zones(visible_zones, config)
 
             # Draw annotations
-            annotations = self.annotations_panel.get_annotations()
-            if annotations:
-                self.engine.draw_annotations(annotations)
+            try:
+                annotations = self.annotations_panel.get_annotations()
+                if annotations:
+                    self.engine.draw_annotations(annotations)
+            except Exception:
+                pass
 
             # Re-apply tight_layout after overlays
             if config.tight_layout and self.engine._fig is not None:

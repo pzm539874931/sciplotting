@@ -134,9 +134,11 @@ class AnnotationsPanel(QWidget):
         self._on_type_change()
 
     def _add_annotation(self):
+        self._updating = True
         ann = Annotation(ann_type=self.type_combo.currentText(), text="Label")
         self._annotations.append(ann)
         self._refresh_list()
+        self._updating = False
         self.ann_list.setCurrentRow(len(self._annotations) - 1)
         self.annotations_changed.emit()
 
@@ -187,16 +189,16 @@ class AnnotationsPanel(QWidget):
         is_arrow = t == "Arrow"
         is_line = t in ("H-Line", "V-Line")
 
-        self.text_edit.setVisible(is_text or is_arrow)
-        self.x_spin.setVisible(is_text or is_arrow)
-        self.y_spin.setVisible(is_text or is_arrow)
-        self.x2_spin.setVisible(is_arrow)
-        self.x2_label.setVisible(is_arrow)
-        self.y2_spin.setVisible(is_arrow)
-        self.y2_label.setVisible(is_arrow)
-        self.value_spin.setVisible(is_line)
-        self.value_label.setVisible(is_line)
-        self.font_spin.setVisible(is_text or is_arrow)
+        self.text_edit.setEnabled(is_text or is_arrow)
+        self.x_spin.setEnabled(is_text or is_arrow)
+        self.y_spin.setEnabled(is_text or is_arrow)
+        self.x2_spin.setEnabled(is_arrow)
+        self.x2_label.setEnabled(is_arrow)
+        self.y2_spin.setEnabled(is_arrow)
+        self.y2_label.setEnabled(is_arrow)
+        self.value_spin.setEnabled(is_line)
+        self.value_label.setEnabled(is_line)
+        self.font_spin.setEnabled(is_text or is_arrow)
 
         if not self._updating:
             self._on_prop_change()
