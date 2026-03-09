@@ -100,10 +100,56 @@ class DataManager:
             return headers
 
     def load_excel(self, path: str, sheet_name=0) -> list[str]:
-        if not HAS_PANDAS:
-            raise ImportError("pandas is required to load Excel files.")
-        self.raw_df = pd.read_excel(path, sheet_name=sheet_name)
-        return list(self.raw_df.columns)
+        """Load Excel file with specified sheet."""
+        try:
+            import openpyxl
+            HAS_OPENPYXL = True
+        except ImportError:
+            HAS_OPENPYXL = False
+
+        if HAS_PANDAS:
+            self.raw_df = pd.read_excel(path, sheet_name=sheet_name)
+            return list(self.raw_df.columns)
+        elif HAS_OPENPYXL:
+            # Fallback using openpyxl directly
+            wb = openpyxl.load_workbook(path, data_only=True)
+            if isinstance(sheet_name, int):
+                ws = wb.worksheets[sheet_name]
+            else:
+                ws = wb[sheet_name]
+            data = list(ws.values)
+            if not data:
+                return []
+            headers = [str(h) if h else f"Col{i+1}" for i, h in enumerate(data[0])]
+            self.raw_df = {h: [] for h in headers}
+            for row in data[1:]:
+                for i, h in enumerate(headers):
+                    val = row[i] if i < len(row) else None
+                    if val is not None:
+                        try:
+                            val = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                    self.raw_df[h].append(val)
+            return headers
+        else:
+            raise ImportError("pandas or openpyxl is required to load Excel files.")
+
+    @staticmethod
+    def get_excel_sheet_names(path: str) -> list[str]:
+        """Get list of sheet names from an Excel file."""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(path, read_only=True)
+            return wb.sheetnames
+        except ImportError:
+            pass
+
+        if HAS_PANDAS:
+            xl = pd.ExcelFile(path)
+            return xl.sheet_names
+
+        return []
 
     def load_from_text(self, text: str, delimiter: str = "\t") -> list[str]:
         lines = text.strip().split("\n")

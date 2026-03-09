@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget,
     QPushButton, QFileDialog, QMessageBox,
     QInputDialog, QStatusBar, QToolBar, QComboBox, QLabel,
-    QHBoxLayout,
+    QHBoxLayout, QMenu,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QAction, QKeySequence
 
 from pathlib import Path
@@ -37,6 +37,13 @@ class MainWindow(QMainWindow):
         self.project_mgr = ProjectManager()
         self._figure_counter = 0
         self._current_project_name = "Untitled Project"
+
+        # Settings for recent files
+        self.settings = QSettings("SciPlotGUI", "SciPlotGUI")
+        self._max_recent_files = 10
+
+        # Enable drag and drop on main window
+        self.setAcceptDrops(True)
 
         # Build statusbar first so signals during UI build don't crash
         self._build_statusbar()
@@ -85,6 +92,15 @@ class MainWindow(QMainWindow):
         open_act.setShortcut(QKeySequence("Ctrl+O"))
         open_act.triggered.connect(self._menu_open_csv)
         file_menu.addAction(open_act)
+
+        open_excel_act = QAction("Open Data (Excel)...", self)
+        open_excel_act.triggered.connect(self._menu_open_excel)
+        file_menu.addAction(open_excel_act)
+
+        # Recent Files submenu
+        self.recent_menu = QMenu("Recent Files", self)
+        file_menu.addMenu(self.recent_menu)
+        self._update_recent_files_menu()
 
         file_menu.addSeparator()
 
@@ -298,6 +314,7 @@ class MainWindow(QMainWindow):
             name = fig_state.get("name", f"Figure {self._figure_counter}")
             tab = FigureTab(name)
             tab.preview_updated.connect(self._sync_layout)
+            tab.data_panel.file_opened.connect(self._add_recent_file)
 
             # Restore embedded data first (so columns are available for config)
             if fig_state.get("embedded_data"):
@@ -426,6 +443,7 @@ class MainWindow(QMainWindow):
         name = f"Figure {self._figure_counter}"
         tab = FigureTab(name)
         tab.preview_updated.connect(self._sync_layout)
+        tab.data_panel.file_opened.connect(self._add_recent_file)
         # Insert before the Layout tab (which is always last)
         idx = max(0, self.tab_widget.count() - 1)
         self.tab_widget.insertTab(idx, tab, name)
@@ -688,3 +706,109 @@ class MainWindow(QMainWindow):
             "</ul>"
             "<p>Built with: PyQt6, Matplotlib, SciencePlots, lmfit, NumPy, Pandas</p>"
         )
+
+    # ================================================================
+    #  Recent Files
+    # ================================================================
+
+    def _get_recent_files(self) -> list[str]:
+        """Get list of recent files from settings."""
+        files = self.settings.value("recentFiles", [])
+        if files is None:
+            return []
+        if isinstance(files, str):
+            return [files] if files else []
+        return list(files)
+
+    def _add_recent_file(self, path: str):
+        """Add a file to the recent files list."""
+        files = self._get_recent_files()
+        # Remove if already exists (to move to top)
+        if path in files:
+            files.remove(path)
+        # Add to front
+        files.insert(0, path)
+        # Trim to max
+        files = files[:self._max_recent_files]
+        self.settings.setValue("recentFiles", files)
+        self._update_recent_files_menu()
+
+    def _update_recent_files_menu(self):
+        """Update the Recent Files submenu."""
+        self.recent_menu.clear()
+        files = self._get_recent_files()
+        if not files:
+            no_recent = QAction("(No recent files)", self)
+            no_recent.setEnabled(False)
+            self.recent_menu.addAction(no_recent)
+            return
+
+        for i, path in enumerate(files):
+            action = QAction(f"{i+1}. {Path(path).name}", self)
+            action.setToolTip(path)
+            action.triggered.connect(lambda checked, p=path: self._open_recent_file(p))
+            self.recent_menu.addAction(action)
+
+        self.recent_menu.addSeparator()
+        clear_action = QAction("Clear Recent Files", self)
+        clear_action.triggered.connect(self._clear_recent_files)
+        self.recent_menu.addAction(clear_action)
+
+    def _open_recent_file(self, path: str):
+        """Open a file from the recent files list."""
+        if not Path(path).exists():
+            QMessageBox.warning(self, "File Not Found", f"File no longer exists:\n{path}")
+            # Remove from recent files
+            files = self._get_recent_files()
+            if path in files:
+                files.remove(path)
+                self.settings.setValue("recentFiles", files)
+                self._update_recent_files_menu()
+            return
+
+        tab = self._current_figure_tab()
+        if tab:
+            tab.data_panel.load_file(path)
+
+    def _clear_recent_files(self):
+        """Clear the recent files list."""
+        self.settings.setValue("recentFiles", [])
+        self._update_recent_files_menu()
+
+    def _menu_open_excel(self):
+        """Open Excel file via menu."""
+        tab = self._current_figure_tab()
+        if tab:
+            tab.data_panel._load_excel()
+
+    # ================================================================
+    #  Drag and Drop
+    # ================================================================
+
+    def dragEnterEvent(self, event):
+        """Accept drag events for supported file types."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                path = url.toLocalFile().lower()
+                if path.endswith(('.csv', '.xlsx', '.xls', '.tsv', '.txt', '.sciplot')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Handle dropped files."""
+        urls = event.mimeData().urls()
+        for url in urls:
+            path = url.toLocalFile()
+            lower_path = path.lower()
+            if lower_path.endswith('.sciplot'):
+                # Load project file
+                self._load_project_from_path(path)
+            else:
+                # Load data file
+                tab = self._current_figure_tab()
+                if tab:
+                    tab.data_panel.load_file(path)
+            break
+        event.acceptProposedAction()

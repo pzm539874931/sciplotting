@@ -9,8 +9,10 @@ from PyQt6.QtWidgets import (
     QComboBox, QFileDialog, QTextEdit, QGroupBox, QFormLayout,
     QLineEdit, QScrollArea, QFrame, QMessageBox, QTabWidget,
     QListWidget, QAbstractItemView, QCheckBox, QSplitter,
+    QInputDialog, QApplication,
 )
-from PyQt6.QtCore import pyqtSignal, QTimer, Qt
+from PyQt6.QtCore import pyqtSignal, QTimer, Qt, QMimeData
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 from core.data_manager import DataManager, ERROR_BAR_TYPES, CENTRAL_TYPES
 from gui.data_table_widget import DataTableWidget
@@ -197,11 +199,15 @@ class DataPanel(QWidget):
     """Panel for managing data input and series configuration."""
 
     data_changed = pyqtSignal()
+    file_opened = pyqtSignal(str)  # Emitted when a file is opened (for recent files)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.data_manager = DataManager()
         self.series_widgets: list[DataSeriesWidget] = []
+
+        # Enable drag and drop
+        self.setAcceptDrops(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -247,6 +253,22 @@ class DataPanel(QWidget):
         btn_row.addWidget(self.load_csv_btn)
         btn_row.addWidget(self.load_excel_btn)
         file_layout.addLayout(btn_row)
+
+        # Clipboard paste button row
+        clipboard_row = QHBoxLayout()
+        self.paste_clipboard_btn = QPushButton("Paste from Clipboard")
+        self.paste_clipboard_btn.setToolTip("Read tab-separated data from system clipboard")
+        self.paste_clipboard_btn.clicked.connect(self._paste_from_clipboard)
+        clipboard_row.addWidget(self.paste_clipboard_btn)
+        clipboard_row.addStretch()
+        file_layout.addLayout(clipboard_row)
+
+        # Drag and drop hint
+        drop_hint = QLabel("Drag & drop .csv, .xlsx, .tsv, .txt files here")
+        drop_hint.setStyleSheet("color: #888; font-style: italic; padding: 8px;")
+        drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        file_layout.addWidget(drop_hint)
+
         self.file_info_label = QLabel("No file loaded")
         self.file_info_label.setWordWrap(True)
         file_layout.addWidget(self.file_info_label)
@@ -376,6 +398,10 @@ class DataPanel(QWidget):
         )
         if not path:
             return
+        self._load_csv_file(path)
+
+    def _load_csv_file(self, path: str):
+        """Load CSV/TSV file from path."""
         try:
             delimiter = "\t" if path.endswith(".tsv") else ","
             cols = self.data_manager.load_csv(path, delimiter=delimiter)
@@ -384,6 +410,7 @@ class DataPanel(QWidget):
                 f"Loaded: {path}\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+            self.file_opened.emit(path)
 
             # Also populate the editable table
             self._sync_table_from_manager()
@@ -398,13 +425,35 @@ class DataPanel(QWidget):
         )
         if not path:
             return
+        self._load_excel_file(path)
+
+    def _load_excel_file(self, path: str, sheet_name=None):
+        """Load Excel file, optionally with a specific sheet."""
         try:
-            cols = self.data_manager.load_excel(path)
+            # Check for multiple sheets
+            sheet_names = DataManager.get_excel_sheet_names(path)
+            if sheet_name is None and len(sheet_names) > 1:
+                # Show sheet selection dialog
+                selected_sheet, ok = QInputDialog.getItem(
+                    self, "Select Sheet",
+                    f"Excel file has {len(sheet_names)} sheets. Select one:",
+                    sheet_names, 0, False
+                )
+                if not ok:
+                    return
+                sheet_name = selected_sheet
+            elif sheet_name is None and len(sheet_names) == 1:
+                sheet_name = sheet_names[0]
+            elif sheet_name is None:
+                sheet_name = 0
+
+            cols = self.data_manager.load_excel(path, sheet_name=sheet_name)
             rows = self.data_manager.get_row_count()
             self.file_info_label.setText(
-                f"Loaded: {path}\nColumns: {', '.join(cols)}\nRows: {rows}"
+                f"Loaded: {path}\nSheet: {sheet_name}\nColumns: {', '.join(cols)}\nRows: {rows}"
             )
             self._use_demo_data = False
+            self.file_opened.emit(path)
 
             # Also populate the editable table
             self._sync_table_from_manager()
@@ -669,3 +718,75 @@ class DataPanel(QWidget):
         self.input_tabs.setCurrentIndex(0)
 
         self.data_changed.emit()
+
+    # ---- Drag and Drop ----
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """Accept drag events for supported file types."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                path = url.toLocalFile().lower()
+                if path.endswith(('.csv', '.xlsx', '.xls', '.tsv', '.txt')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        """Handle dropped files."""
+        urls = event.mimeData().urls()
+        for url in urls:
+            path = url.toLocalFile()
+            lower_path = path.lower()
+            if lower_path.endswith('.xlsx') or lower_path.endswith('.xls'):
+                self._load_excel_file(path)
+                break
+            elif lower_path.endswith(('.csv', '.tsv', '.txt')):
+                self._load_csv_file(path)
+                break
+        event.acceptProposedAction()
+
+    def load_file(self, path: str):
+        """Load a file by path (used for recent files)."""
+        lower_path = path.lower()
+        if lower_path.endswith('.xlsx') or lower_path.endswith('.xls'):
+            self._load_excel_file(path)
+        elif lower_path.endswith(('.csv', '.tsv', '.txt')):
+            self._load_csv_file(path)
+
+    # ---- Clipboard Paste ----
+
+    def _paste_from_clipboard(self):
+        """Paste tab-separated data from system clipboard."""
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+        if not text or not text.strip():
+            QMessageBox.information(self, "Info", "Clipboard is empty or contains no text.")
+            return
+
+        try:
+            # Detect delimiter
+            if '\t' in text:
+                delimiter = '\t'
+            elif ',' in text:
+                delimiter = ','
+            else:
+                delimiter = '\t'
+
+            cols = self.data_manager.load_from_text(text, delimiter=delimiter)
+            if not cols:
+                QMessageBox.warning(self, "Error", "Could not parse clipboard data.")
+                return
+
+            rows = self.data_manager.get_row_count()
+            self.file_info_label.setText(
+                f"Pasted from clipboard\nColumns: {', '.join(cols)}\nRows: {rows}"
+            )
+            self._use_demo_data = False
+
+            # Sync to editable table
+            self._sync_table_from_manager()
+
+            self._rebuild_series(cols)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to parse clipboard data:\n{e}")
