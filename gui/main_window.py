@@ -134,6 +134,13 @@ class MainWindow(QMainWindow):
         redo_act.triggered.connect(self._redo)
         edit_menu.addAction(redo_act)
 
+        edit_menu.addSeparator()
+
+        copy_fig_act = QAction("Copy Figure to Clipboard", self)
+        copy_fig_act.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        copy_fig_act.triggered.connect(self._copy_figure_to_clipboard)
+        edit_menu.addAction(copy_fig_act)
+
         # Figure menu
         fig_menu = menubar.addMenu("Figure")
 
@@ -329,6 +336,8 @@ class MainWindow(QMainWindow):
             # Restore zones config
             if fig_state.get("zones_config"):
                 tab.set_zones_config(fig_state["zones_config"])
+            if fig_state.get("annotations_config"):
+                tab.annotations_panel.set_annotations_config(fig_state["annotations_config"])
 
             # Insert before Layout tab
             idx = max(0, self.tab_widget.count() - 1)
@@ -539,6 +548,12 @@ class MainWindow(QMainWindow):
         tab = self._current_figure_tab()
         if tab:
             tab.redo()
+
+    def _copy_figure_to_clipboard(self):
+        tab = self._current_figure_tab()
+        if tab:
+            tab.canvas.copy_to_clipboard()
+            self.status_bar.showMessage("Figure copied to clipboard", 3000)
 
     def _menu_open_csv(self):
         tab = self._current_figure_tab()

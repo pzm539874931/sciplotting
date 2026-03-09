@@ -22,6 +22,7 @@ from gui.config_panel import ConfigPanel
 from gui.stats_panel import StatsPanel
 from gui.fitting_panel import FittingPanel
 from gui.zones_panel import ZonesPanel
+from gui.annotations_panel import AnnotationsPanel
 from gui.canvas_widget import CanvasWidget
 
 
@@ -58,6 +59,7 @@ class FigureTab(QWidget):
         self.stats_panel.visibility_changed.connect(self._schedule)
         self.fitting_panel.fitting_changed.connect(self._schedule)
         self.zones_panel.zones_changed.connect(self._schedule)
+        self.annotations_panel.annotations_changed.connect(self._schedule)
 
         QTimer.singleShot(100, self.refresh_preview)
 
@@ -94,6 +96,9 @@ class FigureTab(QWidget):
         self.zones_panel = ZonesPanel()
         right_tabs.addTab(self.zones_panel, "Zones")
 
+        self.annotations_panel = AnnotationsPanel()
+        right_tabs.addTab(self.annotations_panel, "Annotate")
+
         splitter.addWidget(right_tabs)
 
         splitter.setSizes([280, 500, 300])
@@ -119,6 +124,7 @@ class FigureTab(QWidget):
             "stats": self.stats_panel.get_stats_config(),
             "fitting": self.fitting_panel.get_fitting_config(),
             "zones": self.get_zones_config(),
+            "annotations": self.annotations_panel.get_annotations_config(),
             "data": self.data_panel.get_embedded_data(),
         }
 
@@ -139,6 +145,10 @@ class FigureTab(QWidget):
             # Restore zones
             if state.get("zones"):
                 self.set_zones_config(state["zones"])
+
+            # Restore annotations
+            if state.get("annotations"):
+                self.annotations_panel.set_annotations_config(state["annotations"])
 
             # Restore stats panel settings
             if state.get("stats"):
@@ -231,6 +241,11 @@ class FigureTab(QWidget):
             visible_zones = self.zones_panel.get_visible_zones()
             if visible_zones:
                 self.engine.draw_zones(visible_zones, config)
+
+            # Draw annotations
+            annotations = self.annotations_panel.get_annotations()
+            if annotations:
+                self.engine.draw_annotations(annotations)
 
             # Re-apply tight_layout after overlays
             if config.tight_layout and self.engine._fig is not None:

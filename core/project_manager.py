@@ -245,6 +245,7 @@ class ProjectManager:
             "stats_config": tab.stats_panel.get_stats_config() if hasattr(tab, 'stats_panel') else {},
             "fitting_config": tab.fitting_panel.get_fitting_config() if hasattr(tab, 'fitting_panel') else {},
             "zones_config": tab.get_zones_config() if hasattr(tab, 'get_zones_config') else {},
+            "annotations_config": tab.annotations_panel.get_annotations_config() if hasattr(tab, 'annotations_panel') else [],
             "embedded_data": tab.data_panel.get_embedded_data() if hasattr(tab, 'data_panel') else {},
         }
 

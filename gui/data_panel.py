@@ -9,11 +9,12 @@ from PyQt6.QtWidgets import (
     QComboBox, QFileDialog, QTextEdit, QGroupBox, QFormLayout,
     QLineEdit, QScrollArea, QFrame, QMessageBox, QTabWidget,
     QListWidget, QAbstractItemView, QCheckBox, QSplitter,
-    QInputDialog, QApplication,
+    QInputDialog, QApplication, QColorDialog, QMenu,
 )
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt, QMimeData
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QColor
 
+import numpy as np
 from core.data_manager import DataManager, ERROR_BAR_TYPES, CENTRAL_TYPES
 from gui.data_table_widget import DataTableWidget
 
@@ -44,6 +45,19 @@ class DataSeriesWidget(QFrame):
         self.label_edit.textChanged.connect(lambda: self.changed.emit())
         header.addWidget(QLabel("Label:"))
         header.addWidget(self.label_edit)
+        # Per-series color picker
+        self._custom_color: str | None = None
+        self.color_btn = QPushButton("")
+        self.color_btn.setFixedSize(26, 26)
+        self.color_btn.setToolTip("Set custom color (right-click to reset)")
+        self.color_btn.setStyleSheet(
+            "QPushButton { background: #cccccc; border: 2px solid #999; border-radius: 3px; }"
+        )
+        self.color_btn.clicked.connect(self._pick_color)
+        self.color_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.color_btn.customContextMenuRequested.connect(self._reset_color)
+        header.addWidget(self.color_btn)
+
         self.remove_btn = QPushButton("✕")
         self.remove_btn.setFixedSize(30, 26)
         self.remove_btn.setStyleSheet(
@@ -63,6 +77,13 @@ class DataSeriesWidget(QFrame):
         self.mode_combo.currentIndexChanged.connect(self._on_mode_change)
         mode_row.addWidget(QLabel("Mode:"))
         mode_row.addWidget(self.mode_combo)
+
+        # Y-axis selector (Left / Right)
+        self.yaxis_combo = QComboBox()
+        self.yaxis_combo.addItems(["Left (Y1)", "Right (Y2)"])
+        self.yaxis_combo.setFixedWidth(90)
+        self.yaxis_combo.currentIndexChanged.connect(lambda: self.changed.emit())
+        mode_row.addWidget(self.yaxis_combo)
         layout.addLayout(mode_row)
 
         # --- X column (shared) ---
@@ -130,6 +151,45 @@ class DataSeriesWidget(QFrame):
         self.rep_frame.setVisible(is_replicate)
         self.changed.emit()
 
+    def _pick_color(self):
+        """Open color picker for this series."""
+        initial = QColor(self._custom_color) if self._custom_color else QColor("#333333")
+        color = QColorDialog.getColor(initial, self, "Series Color")
+        if color.isValid():
+            self._custom_color = color.name()
+            self.color_btn.setStyleSheet(
+                f"QPushButton {{ background: {self._custom_color}; "
+                f"border: 2px solid #666; border-radius: 3px; }}"
+            )
+            self.changed.emit()
+
+    def _reset_color(self, pos):
+        """Reset custom color (right-click menu)."""
+        menu = QMenu(self)
+        reset = menu.addAction("Reset to palette color")
+        action = menu.exec(self.color_btn.mapToGlobal(pos))
+        if action == reset:
+            self._custom_color = None
+            self.color_btn.setStyleSheet(
+                "QPushButton { background: #cccccc; border: 2px solid #999; border-radius: 3px; }"
+            )
+            self.changed.emit()
+
+    def get_custom_color(self) -> str | None:
+        return self._custom_color
+
+    def set_custom_color(self, color: str | None):
+        self._custom_color = color
+        if color:
+            self.color_btn.setStyleSheet(
+                f"QPushButton {{ background: {color}; "
+                f"border: 2px solid #666; border-radius: 3px; }}"
+            )
+        else:
+            self.color_btn.setStyleSheet(
+                "QPushButton { background: #cccccc; border: 2px solid #999; border-radius: 3px; }"
+            )
+
     def is_replicate_mode(self) -> bool:
         return self.mode_combo.currentIndex() == 1
 
@@ -192,6 +252,10 @@ class DataSeriesWidget(QFrame):
             sel["y_col"] = self.y_combo.currentText()
             yerr_text = self.yerr_combo.currentText()
             sel["yerr_col"] = None if yerr_text == "(none)" else yerr_text
+        if self._custom_color:
+            sel["custom_color"] = self._custom_color
+        if self.yaxis_combo.currentIndex() == 1:
+            sel["y_axis"] = "right"
         return sel
 
 
@@ -237,6 +301,12 @@ class DataPanel(QWidget):
         self.apply_table_btn.clicked.connect(self._apply_table_data)
         self.apply_table_btn.setToolTip("Use table data for plotting")
         table_btn_row.addWidget(self.apply_table_btn)
+
+        self.transform_btn = QPushButton("Transform...")
+        self.transform_btn.setToolTip("Apply mathematical transforms to columns")
+        self.transform_btn.clicked.connect(self._open_transform)
+        table_btn_row.addWidget(self.transform_btn)
+
         table_btn_row.addStretch()
         table_layout.addLayout(table_btn_row)
 
@@ -345,6 +415,37 @@ class DataPanel(QWidget):
         self._table_has_changes = True
         # Auto-apply table data for live preview
         self._apply_table_data(silent=True)
+
+    def _open_transform(self):
+        """Open transform dialog and add new columns."""
+        from gui.transform_dialog import TransformDialog
+        columns = self.data_table.get_columns()
+        data = self.data_table.get_data()
+        if not columns:
+            QMessageBox.information(self, "Info", "No data to transform.")
+            return
+        dlg = TransformDialog(columns, data, self)
+        if dlg.exec():
+            new_cols, new_data = dlg.get_results()
+            if new_cols:
+                # Add new columns to table
+                self.data_table.table.blockSignals(True)
+                for col_name in new_cols:
+                    col_idx = self.data_table.table.columnCount()
+                    self.data_table.table.insertColumn(col_idx)
+                    from PyQt6.QtWidgets import QTableWidgetItem
+                    self.data_table.table.setHorizontalHeaderItem(
+                        col_idx, QTableWidgetItem(col_name)
+                    )
+                    values = new_data[col_name]
+                    for row_idx, val in enumerate(values):
+                        while row_idx >= self.data_table.table.rowCount():
+                            self.data_table.table.insertRow(self.data_table.table.rowCount())
+                        text = "" if val is None or (isinstance(val, float) and np.isnan(val)) else f"{val:.6g}"
+                        self.data_table.table.setItem(row_idx, col_idx, QTableWidgetItem(text))
+                self.data_table.col_spin.setValue(self.data_table.table.columnCount())
+                self.data_table.table.blockSignals(False)
+                self.data_table.data_changed.emit()
 
     def _apply_table_data(self, silent: bool = False):
         """Apply data from table to the data manager."""

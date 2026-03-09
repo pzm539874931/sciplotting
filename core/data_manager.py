@@ -310,6 +310,10 @@ class DataManager:
                     error_type=sel.get("error_type", "SD"),
                 )
                 ds = self.compute_replicate_stats(group, x_col=sel.get("x_col"))
+                if sel.get("custom_color"):
+                    ds["custom_color"] = sel["custom_color"]
+                if sel.get("y_axis"):
+                    ds["y_axis"] = sel["y_axis"]
                 results.append(ds)
             else:
                 ds = self.build_dataset(
@@ -319,6 +323,10 @@ class DataManager:
                     yerr_col=sel.get("yerr_col"),
                     xerr_col=sel.get("xerr_col"),
                 )
+                if sel.get("custom_color"):
+                    ds["custom_color"] = sel["custom_color"]
+                if sel.get("y_axis"):
+                    ds["y_axis"] = sel["y_axis"]
                 results.append(ds)
         return results
 

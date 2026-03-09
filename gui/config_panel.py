@@ -12,6 +12,22 @@ from PyQt6.QtGui import QColor
 
 from core.plot_engine import PlotConfig, PLOT_TYPES, STYLE_PRESETS, EXPORT_FORMATS
 
+# Color palettes for academic figures
+COLOR_PALETTES = {
+    "Default (matplotlib)": None,  # Use matplotlib default cycle
+    "Nature": ["#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4", "#91D1C2", "#DC0000"],
+    "Science": ["#3B4992", "#EE0000", "#008B45", "#631879", "#008280", "#BB0021", "#5F559B", "#A20056"],
+    "Prism": ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEEAD", "#D4A5A5", "#9B59B6", "#3498DB"],
+    "Colorblind-safe (Wong)": ["#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"],
+    "Pastel": ["#AEC7E8", "#FFBB78", "#98DF8A", "#FF9896", "#C5B0D5", "#C49C94", "#F7B6D2", "#C7C7C7"],
+    "Bright": ["#023EFF", "#FF7C00", "#1AC938", "#E8000B", "#8B2BE2", "#9F4800", "#F14CC1", "#A3A3A3"],
+    "Muted": ["#4878D0", "#EE854A", "#6ACC64", "#D65F5F", "#956CB4", "#8C613C", "#DC7EC0", "#797979"],
+}
+
+def get_palette_colors(palette_name: str) -> list[str] | None:
+    """Get color list for a palette name."""
+    return COLOR_PALETTES.get(palette_name)
+
 
 class ConfigPanel(QWidget):
     """Panel for configuring plot appearance and parameters."""
@@ -62,6 +78,11 @@ class ConfigPanel(QWidget):
         self.ylabel_edit.textChanged.connect(lambda: self.config_changed.emit())
         label_layout.addRow("Y Label:", self.ylabel_edit)
 
+        self.y2label_edit = QLineEdit()
+        self.y2label_edit.setPlaceholderText("Right Y-axis label (if used)")
+        self.y2label_edit.textChanged.connect(lambda: self.config_changed.emit())
+        label_layout.addRow("Y2 Label:", self.y2label_edit)
+
         form.addWidget(label_group)
 
         # --- Figure size ---
@@ -99,6 +120,13 @@ class ConfigPanel(QWidget):
         # --- Appearance ---
         appear_group = QGroupBox("Appearance")
         appear_layout = QFormLayout(appear_group)
+
+        # Color palette dropdown
+        self.palette_combo = QComboBox()
+        self.palette_combo.addItems(list(COLOR_PALETTES.keys()))
+        self.palette_combo.currentTextChanged.connect(lambda: self.config_changed.emit())
+        self.palette_combo.setToolTip("Select a color palette for data series")
+        appear_layout.addRow("Color Palette:", self.palette_combo)
 
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 32)
@@ -369,6 +397,7 @@ class ConfigPanel(QWidget):
         cfg.title = self.title_edit.text()
         cfg.xlabel = self.xlabel_edit.text()
         cfg.ylabel = self.ylabel_edit.text()
+        cfg.y2label = self.y2label_edit.text()
         cfg.fig_width = self.fig_width_spin.value()
         cfg.fig_height = self.fig_height_spin.value()
         cfg.font_size = self.font_size_spin.value()
@@ -387,6 +416,10 @@ class ConfigPanel(QWidget):
         cfg.capsize = self.capsize_spin.value()
         cfg.show_individual_points = self.show_points_check.isChecked()
         cfg.colormap = self.colormap_combo.currentText()
+        # Color palette
+        palette_name = self.palette_combo.currentText()
+        cfg.color_palette = palette_name
+        cfg.color_cycle = get_palette_colors(palette_name)
         # Background options
         cfg.fig_facecolor = self._fig_bg_color
         cfg.ax_facecolor = self._ax_bg_color
@@ -403,6 +436,7 @@ class ConfigPanel(QWidget):
         self.title_edit.setText(cfg.title)
         self.xlabel_edit.setText(cfg.xlabel)
         self.ylabel_edit.setText(cfg.ylabel)
+        self.y2label_edit.setText(getattr(cfg, 'y2label', ''))
         self.fig_width_spin.setValue(cfg.fig_width)
         self.fig_height_spin.setValue(cfg.fig_height)
         self.font_size_spin.setValue(cfg.font_size)
@@ -420,6 +454,11 @@ class ConfigPanel(QWidget):
         self.capsize_spin.setValue(cfg.capsize)
         self.show_points_check.setChecked(cfg.show_individual_points)
         self.colormap_combo.setCurrentText(cfg.colormap)
+        # Color palette
+        palette_name = getattr(cfg, 'color_palette', 'Default (matplotlib)')
+        idx = self.palette_combo.findText(palette_name)
+        if idx >= 0:
+            self.palette_combo.setCurrentIndex(idx)
         # Background options
         self._fig_bg_color = cfg.fig_facecolor
         self._update_color_btn(self.fig_bg_btn, self._fig_bg_color)

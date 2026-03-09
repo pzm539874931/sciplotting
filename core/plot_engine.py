@@ -70,6 +70,7 @@ class PlotConfig:
         self.title: str = ""
         self.xlabel: str = ""
         self.ylabel: str = ""
+        self.y2label: str = ""
         self.legend_loc: str = "best"
         self.fig_width: float = 6.0
         self.fig_height: float = 4.5
@@ -85,6 +86,7 @@ class PlotConfig:
         self.ylim_min: Optional[float] = None
         self.ylim_max: Optional[float] = None
         self.color_cycle: Optional[list] = None
+        self.color_palette: str = "Default (matplotlib)"
         self.tight_layout: bool = True
         self.show_legend: bool = True
         # errorbar
@@ -155,7 +157,20 @@ class PlotEngine:
             if config.color_cycle:
                 ax.set_prop_cycle(color=config.color_cycle)
 
-            self._draw(ax, datasets, config)
+            # Split datasets into left (default) and right y-axis
+            left_ds = [ds for ds in datasets if ds.get("y_axis") != "right"]
+            right_ds = [ds for ds in datasets if ds.get("y_axis") == "right"]
+
+            self._draw(ax, left_ds, config)
+
+            # Dual Y-axis: draw right-axis datasets on twinx
+            self._ax2 = None
+            if right_ds:
+                ax2 = ax.twinx()
+                self._ax2 = ax2
+                self._draw(ax2, right_ds, config)
+                if config.y2label:
+                    ax2.set_ylabel(config.y2label, fontsize=config.font_size)
 
             if config.title:
                 ax.set_title(config.title, fontsize=config.font_size + 2)
@@ -174,9 +189,14 @@ class PlotEngine:
             if config.grid:
                 ax.grid(True, alpha=0.3)
             if config.show_legend and config.plot_type not in ("heatmap", "pie"):
+                # Merge legends from both axes
                 handles, labels = ax.get_legend_handles_labels()
+                if right_ds and self._ax2:
+                    h2, l2 = self._ax2.get_legend_handles_labels()
+                    handles += h2
+                    labels += l2
                 if labels:
-                    ax.legend(loc=config.legend_loc)
+                    ax.legend(handles, labels, loc=config.legend_loc)
 
             # Apply gradient background after axes limits are set
             if config.use_gradient:
@@ -237,7 +257,15 @@ class PlotEngine:
     def _draw(self, ax, datasets: list[dict], config: PlotConfig):
         pt = config.plot_type
         prop_cycle = plt.rcParams["axes.prop_cycle"]
-        colors = [c["color"] for c in prop_cycle]
+        palette_colors = [c["color"] for c in prop_cycle]
+
+        # Build colors list: use custom_color if set, else palette
+        colors = []
+        for i, ds in enumerate(datasets):
+            if ds.get("custom_color"):
+                colors.append(ds["custom_color"])
+            else:
+                colors.append(palette_colors[i % len(palette_colors)])
 
         if pt == "line":
             for i, ds in enumerate(datasets):
@@ -655,6 +683,58 @@ class PlotEngine:
             handles, labels = ax.get_legend_handles_labels()
             if labels:
                 ax.legend(loc=config.legend_loc)
+
+    def draw_annotations(self, annotations: list):
+        """Draw text, arrow, and reference line annotations."""
+        if self._ax is None:
+            return
+        ax = self._ax
+        from core.annotations_manager import LINE_STYLES
+
+        for ann in annotations:
+            ls = LINE_STYLES.get(ann.line_style, "-")
+            if ann.ann_type == "Text":
+                ax.text(
+                    ann.x, ann.y, ann.text,
+                    fontsize=ann.font_size, color=ann.color,
+                    ha="center", va="bottom",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                              edgecolor=ann.color, alpha=0.8),
+                )
+            elif ann.ann_type == "Arrow":
+                ax.annotate(
+                    ann.text, xy=(ann.x2, ann.y2), xytext=(ann.x, ann.y),
+                    fontsize=ann.font_size, color=ann.color,
+                    arrowprops=dict(
+                        arrowstyle="->", color=ann.color,
+                        lw=ann.line_width, linestyle=ls,
+                    ),
+                    ha="center", va="bottom",
+                )
+            elif ann.ann_type == "H-Line":
+                ax.axhline(
+                    y=ann.value, color=ann.color,
+                    linewidth=ann.line_width, linestyle=ls,
+                    label=ann.text if ann.text else None,
+                )
+                if ann.text:
+                    ax.text(
+                        ax.get_xlim()[1], ann.value, f" {ann.text}",
+                        fontsize=ann.font_size, color=ann.color,
+                        va="bottom", ha="right",
+                    )
+            elif ann.ann_type == "V-Line":
+                ax.axvline(
+                    x=ann.value, color=ann.color,
+                    linewidth=ann.line_width, linestyle=ls,
+                    label=ann.text if ann.text else None,
+                )
+                if ann.text:
+                    ax.text(
+                        ann.value, ax.get_ylim()[1], f" {ann.text}",
+                        fontsize=ann.font_size, color=ann.color,
+                        va="top", ha="left", rotation=90,
+                    )
 
     def draw_zones(self, zones: list, config: "PlotConfig"):
         """
